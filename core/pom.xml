@@ -150,6 +150,8 @@
                 <configuration>
                     <projectsDirectory>src/test/projects</projectsDirectory>
                     <cloneProjectsTo>target/projects</cloneProjectsTo>
+                    <skipInstallation>${skipTests}</skipInstallation>
+                    <skipInvocation>${skipTests}</skipInvocation>
                 </configuration>
                 <executions>
                     <execution>

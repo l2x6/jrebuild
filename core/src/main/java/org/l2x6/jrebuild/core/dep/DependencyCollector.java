@@ -11,7 +11,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -29,6 +28,7 @@ import org.eclipse.aether.collection.DependencySelector;
 import org.eclipse.aether.graph.DependencyNode;
 import org.eclipse.aether.graph.DependencyVisitor;
 import org.eclipse.aether.graph.Exclusion;
+import org.eclipse.aether.repository.RemoteRepository;
 import org.eclipse.aether.util.graph.selector.AndDependencySelector;
 import org.eclipse.aether.util.graph.selector.ExclusionDependencySelector;
 import org.eclipse.aether.util.graph.selector.ScopeDependencySelector;
@@ -83,11 +83,11 @@ public class DependencyCollector {
                                 .collectDependencies(repoSession, collectRequest)
                                 .getRoot();
                         ResolvedArtifactNodeVisitor v = new ResolvedArtifactNodeVisitor(
+                                modelReader,
                                 request.includeParentsAndImports()
                                         ? new ParentsAndImportsResolver(
                                                 modelReader)
-                                        : (a, r) -> {
-                                        });
+                                        : null);
                         rootNode.accept(v);
                         return v.rootNode;
                     } catch (DependencyCollectionException e) {
@@ -124,7 +124,7 @@ public class DependencyCollector {
                 .forEach(add);
     }
 
-    static class ParentsAndImportsResolver implements BiConsumer<Artifact, Consumer<ResolvedArtifactNode>> {
+    static class ParentsAndImportsResolver {
         private final CachingMavenModelReader modelReader;
 
         public ParentsAndImportsResolver(CachingMavenModelReader modelReader) {
@@ -132,7 +132,6 @@ public class DependencyCollector {
             this.modelReader = modelReader;
         }
 
-        @Override
         public void accept(Artifact a, Consumer<ResolvedArtifactNode> result) {
             ModelData resp = modelReader.readModel(a);
 
@@ -161,8 +160,9 @@ public class DependencyCollector {
                                     + "' of " + gav + " in " + interpolatedModel.getId());
                         }
                         List<ResolvedArtifactNode> children = new ArrayList<>();
-                        accept(JrebuildUtils.toAetherArtifact(gav), children::add);
-                        result.accept(new ResolvedArtifactNode(gav, Collections.unmodifiableList(children)));
+                        traverse(gav.toGav(), children::add);
+                        result.accept(
+                                new ResolvedArtifactNode(gav, Collections.unmodifiableList(children)));
                     }
                 }
             }
@@ -189,11 +189,14 @@ public class DependencyCollector {
 
         private final Deque<ResolvedArtifactNode> stack = new ArrayDeque<>();
         private ResolvedArtifactNode rootNode;
-        private final BiConsumer<Artifact, Consumer<ResolvedArtifactNode>> parentsAndImportsResolver;
+        private final CachingMavenModelReader modelReader;
+        private final ParentsAndImportsResolver parentsAndImportsResolver;
         private List<GavtcsPattern> excludes;
 
-        public ResolvedArtifactNodeVisitor(BiConsumer<Artifact, Consumer<ResolvedArtifactNode>> parentsAndImportsResolver) {
+        public ResolvedArtifactNodeVisitor(CachingMavenModelReader modelReader,
+                ParentsAndImportsResolver parentsAndImportsResolver) {
             super();
+            this.modelReader = modelReader;
             this.parentsAndImportsResolver = parentsAndImportsResolver;
         }
 
@@ -202,7 +205,21 @@ public class DependencyCollector {
             final Artifact artifact = node.getArtifact();
             final Gavtc gavtc = JrebuildUtils.toGavtc(artifact);
             final ArrayList<ResolvedArtifactNode> children = new ArrayList<>();
-            parentsAndImportsResolver.accept(artifact, children::add);
+            final List<RemoteRepository> repositories = Collections.unmodifiableList(new ArrayList<>(node.getRepositories()));
+            modelReader.register(gavtc.toGav(), repositories);
+            if (parentsAndImportsResolver != null) {
+                try {
+                    parentsAndImportsResolver.accept(artifact, children::add);
+                } catch (Exception e) {
+                    throw new RuntimeException(
+                            "Could not resolve parents or imports of " + gavtc + "; dependency stack: \n" +
+                                    stack.stream()
+                                            .map(ResolvedArtifactNode::gavtc)
+                                            .map(Gavtc::toString)
+                                            .collect(Collectors.joining("\n -> ")),
+                            e);
+                }
+            }
             final ResolvedArtifactNode newNode = new ResolvedArtifactNode(gavtc, children);
             final ResolvedArtifactNode parent = stack.peek();
             if (parent != null) {
