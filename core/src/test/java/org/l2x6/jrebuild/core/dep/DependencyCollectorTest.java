@@ -5,9 +5,13 @@
 package org.l2x6.jrebuild.core.dep;
 
 import eu.maveniverse.maven.mima.context.Context;
+import eu.maveniverse.maven.mima.context.ContextOverrides;
 import eu.maveniverse.maven.mima.context.Runtime;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.assertj.core.api.Assertions;
@@ -18,6 +22,7 @@ import org.l2x6.jrebuild.core.mima.internal.CachingMavenModelReader;
 import org.l2x6.jrebuild.core.tree.PrintVisitor;
 import org.l2x6.pom.tuner.model.Gav;
 import org.l2x6.pom.tuner.model.Gavtc;
+import org.l2x6.pom.tuner.model.GavtcsPattern;
 import org.l2x6.pom.tuner.model.GavtcsSet;
 
 public class DependencyCollectorTest {
@@ -148,6 +153,95 @@ public class DependencyCollectorTest {
             Assertions.assertThat(trees).containsExactly(expected);
         }
 
+    }
+
+    @Test
+    void excludes() {
+        /* If we exclude a non-existent dependency DependencyCollector must not fail */
+
+        final Path mavenRepoDeployment = Path.of("target/repo");
+        final String relPath = "org/l2x6/jrebuild/external/jrebuild-external-non-existent";
+        final String suffix = "-" + UUID.randomUUID().toString();
+
+        Runtime runtime = org.l2x6.jrebuild.core.mima.JRebuildRuntime.getInstance();
+        ContextOverrides overrides = JrebuildTestUtils.testRepo().build();
+        final Path remotePath = mavenRepoDeployment.resolve(relPath);
+        final Path localPath = overrides.getLocalRepositoryOverride().resolve(relPath);
+        Assertions.assertThat(remotePath).exists();
+        final List<Path> hidePaths = List.of(remotePath, localPath);
+
+        final DependencyCollectorRequest re = DependencyCollectorRequest.builder()
+                .rootArtifacts(Gavtc.of("org.l2x6.jrebuild.external:jrebuild-external-non-existent-dependency-owner:2.0.0"))
+                .excludes(GavtcsPattern.of("org.l2x6.jrebuild.external:jrebuild-external-non-existent"))
+                .includeParentsAndImports(false)
+                .build();
+
+        /* First try with jrebuild-external-non-existent being resolvable in the remote repo */
+        try (Context context = runtime.create(overrides)) {
+
+            List<String> trees = DependencyCollector.collect(context, re)
+                    .sorted()
+                    .map(PrintVisitor::toString)
+                    .peek(tree -> log.infof("Dependencies:\n%s", tree))
+                    .collect(Collectors.toList());
+            String[] expected = {
+                    """
+                            org.l2x6.jrebuild.external:jrebuild-external-non-existent-dependency-owner:2.0.0
+                            """
+            };
+            Assertions.assertThat(trees).containsExactly(expected);
+        }
+        /* Make sure that the resolved did not attempt to download jrebuild-external-non-existent */
+        Assertions.assertThat(localPath).doesNotExist();
+
+        /* Second, remove the jrebuild-external-non-existent from remote maven repo
+         * and the DependencyCollector should still not fail */
+        hideBadDep(remotePath, suffix);
+        try (Context context = runtime.create(overrides)) {
+
+            List<String> trees = DependencyCollector.collect(context, re)
+                    .sorted()
+                    .map(PrintVisitor::toString)
+                    .peek(tree -> log.infof("Dependencies:\n%s", tree))
+                    .collect(Collectors.toList());
+            String[] expected = {
+                    """
+                            org.l2x6.jrebuild.external:jrebuild-external-non-existent-dependency-owner:2.0.0
+                            """
+            };
+            Assertions.assertThat(trees).containsExactly(expected);
+            /* Make sure that the resolved did not attempt to download jrebuild-external-non-existent */
+            Assertions.assertThat(localPath).doesNotExist();
+        } finally {
+            revealBadDep(remotePath, suffix);
+        }
+
+    }
+
+    static void hideBadDep(Path badDepPath, String suffix) {
+        Path dest = badDepPath.getParent().resolve(badDepPath.getFileName().toString() + suffix);
+        try {
+            Files.move(badDepPath, dest);
+        } catch (IOException e) {
+            throw new RuntimeException("Could not move " + badDepPath + " -> " + dest, e);
+        }
+    }
+
+    static void revealBadDep(Path badDepPath, String suffix) {
+        if (Files.exists(badDepPath)) {
+            Path dest = badDepPath.getParent().resolve(badDepPath.getFileName().toString() + "-deleted-" + UUID.randomUUID());
+            try {
+                Files.move(badDepPath, dest);
+            } catch (IOException e) {
+                throw new RuntimeException("Could not move " + dest + " -> " + badDepPath, e);
+            }
+        }
+        Path dest = badDepPath.getParent().resolve(badDepPath.getFileName().toString() + suffix);
+        try {
+            Files.move(dest, badDepPath);
+        } catch (IOException e) {
+            throw new RuntimeException("Could not move " + dest + " -> " + badDepPath, e);
+        }
     }
 
     private void assertDependencies(String snapshot, Consumer<Builder> customizeRequestBuilder, String... expected) {

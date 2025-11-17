@@ -18,6 +18,8 @@
         <module>api</module>
         <module>intermediary</module>
         <module>impl</module>
+        <module>non-existent</module>
+        <module>non-existent-dependency-owner</module>
     </modules>
     <scm>
         <connection>scm:git:https://github.com/l2x6/jrebuild-external</connection>

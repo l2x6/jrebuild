@@ -23,7 +23,9 @@ import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.artifact.Artifact;
 import org.eclipse.aether.artifact.DefaultArtifact;
 import org.eclipse.aether.collection.CollectRequest;
+import org.eclipse.aether.collection.DependencyCollectionContext;
 import org.eclipse.aether.collection.DependencyCollectionException;
+import org.eclipse.aether.collection.DependencySelector;
 import org.eclipse.aether.graph.DependencyNode;
 import org.eclipse.aether.graph.DependencyVisitor;
 import org.eclipse.aether.graph.Exclusion;
@@ -34,6 +36,7 @@ import org.l2x6.jrebuild.core.mima.internal.CachingMavenModelReader;
 import org.l2x6.jrebuild.core.mima.internal.CachingMavenModelReader.ModelData;
 import org.l2x6.pom.tuner.model.Gav;
 import org.l2x6.pom.tuner.model.Gavtc;
+import org.l2x6.pom.tuner.model.GavtcsPattern;
 
 public class DependencyCollector {
 
@@ -47,6 +50,24 @@ public class DependencyCollector {
         }
         request.additionalBoms().forEach(additionalBom -> collectConstraints(additionalBom, modelReader, constraints::add));
 
+        RepositorySystemSession rSession = context.repositorySystemSession();
+        final Collection<GavtcsPattern> excludes = request.excludes();
+        if (request.includeOptionalDependencies() || !excludes.isEmpty()) {
+            List<DependencySelector> selectors = new ArrayList<>(3);
+            selectors.add(new ScopeDependencySelector("test", "provided"));
+            selectors.add(new ExclusionDependencySelector());
+            if (request.includeOptionalDependencies()) {
+                /* The default instance contains org.eclipse.aether.util.graph.selector.OptionalDependencySelector
+                 * which we do not add here */
+            }
+            if (!excludes.isEmpty()) {
+                selectors.add(new ExcludesDependencySelector(excludes));
+            }
+            rSession = new DefaultRepositorySystemSession(rSession);
+            ((DefaultRepositorySystemSession) rSession).setDependencySelector(new AndDependencySelector(selectors));
+        }
+        final RepositorySystemSession repoSession = rSession;
+
         return request.rootArtifacts().parallelStream()
                 .map(rootGavtc -> {
 
@@ -56,14 +77,6 @@ public class DependencyCollector {
                             "runtime");
                     final CollectRequest collectRequest = new CollectRequest(dependency, context.remoteRepositories());
                     collectRequest.setManagedDependencies(constraints);
-
-                    RepositorySystemSession repoSession = context.repositorySystemSession();
-                    if (request.includeOptionalDependencies()) {
-                        repoSession = new DefaultRepositorySystemSession(repoSession);
-                        ((DefaultRepositorySystemSession) repoSession).setDependencySelector(new AndDependencySelector(
-                                new ScopeDependencySelector("test", "provided"),
-                                new ExclusionDependencySelector()));
-                    }
 
                     try {
                         final DependencyNode rootNode = context.repositorySystem()
@@ -177,6 +190,7 @@ public class DependencyCollector {
         private final Deque<ResolvedArtifactNode> stack = new ArrayDeque<>();
         private ResolvedArtifactNode rootNode;
         private final BiConsumer<Artifact, Consumer<ResolvedArtifactNode>> parentsAndImportsResolver;
+        private List<GavtcsPattern> excludes;
 
         public ResolvedArtifactNodeVisitor(BiConsumer<Artifact, Consumer<ResolvedArtifactNode>> parentsAndImportsResolver) {
             super();
@@ -206,6 +220,34 @@ public class DependencyCollector {
                 this.rootNode = rn;
             }
             return true;
+        }
+
+    }
+
+    static class ExcludesDependencySelector implements DependencySelector {
+
+        private Collection<GavtcsPattern> excludes;
+
+        public ExcludesDependencySelector(Collection<GavtcsPattern> excludes) {
+            this.excludes = excludes;
+        }
+
+        @Override
+        public boolean selectDependency(org.eclipse.aether.graph.Dependency dep) {
+            final Artifact a = dep.getArtifact();
+            return !excludes.stream()
+                    .anyMatch(pattern -> pattern.matches(
+                            a.getGroupId(),
+                            a.getArtifactId(),
+                            a.getVersion(),
+                            a.getExtension(),
+                            a.getClassifier(),
+                            dep.getScope()));
+        }
+
+        @Override
+        public DependencySelector deriveChildSelector(DependencyCollectionContext context) {
+            return this;
         }
 
     }

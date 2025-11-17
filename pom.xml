@@ -293,6 +293,7 @@
                     <configuration>
                         <systemPropertyVariables>
                             <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                            <maven.repo.local>${settings.localRepository}</maven.repo.local>
                         </systemPropertyVariables>
                     </configuration>
                 </plugin>

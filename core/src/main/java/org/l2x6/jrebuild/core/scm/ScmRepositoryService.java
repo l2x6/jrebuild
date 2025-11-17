@@ -35,7 +35,8 @@ public class ScmRepositoryService implements ScmLocator {
             List<String> dominoRecipeUrls) {
         return new ScmRepositoryService(List.of(
                 new DominoBuildRecipesScmLocator(cloneDirectory, dominoRecipeUrls),
-                new PomScmLocator(getEffectiveModel)));
+                new PomScmLocator(getEffectiveModel),
+                new TerminalScmLocator()));
     }
 
     ScmRepositoryService(List<ScmLocator> scmLocators) {
@@ -133,5 +134,13 @@ public class ScmRepositoryService implements ScmLocator {
             return buildGroup.toString();
         }
 
+    }
+
+    static class TerminalScmLocator implements ScmLocator {
+
+        @Override
+        public ScmRef locate(Gav gav) {
+            return ScmRef.createUnknown(gav);
+        }
     }
 }

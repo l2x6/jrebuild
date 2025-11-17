@@ -101,7 +101,8 @@ public class AnalyzeCommand implements Runnable {
                         .select(bom, gavtcsSet);
                 builder
                         .rootBom(bom)
-                        .rootArtifacts(bomRootArtifacts);
+                        .rootArtifacts(bomRootArtifacts)
+                        .excludes(excludes);
             }
 
             final DependencyCollectorRequest re = builder.build();
