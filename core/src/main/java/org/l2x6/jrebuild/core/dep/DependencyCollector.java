@@ -22,8 +22,8 @@ import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.artifact.Artifact;
 import org.eclipse.aether.artifact.DefaultArtifact;
 import org.eclipse.aether.collection.CollectRequest;
+import org.eclipse.aether.collection.CollectResult;
 import org.eclipse.aether.collection.DependencyCollectionContext;
-import org.eclipse.aether.collection.DependencyCollectionException;
 import org.eclipse.aether.collection.DependencySelector;
 import org.eclipse.aether.graph.DependencyNode;
 import org.eclipse.aether.graph.DependencyVisitor;
@@ -32,6 +32,7 @@ import org.eclipse.aether.repository.RemoteRepository;
 import org.eclipse.aether.util.graph.selector.AndDependencySelector;
 import org.eclipse.aether.util.graph.selector.ExclusionDependencySelector;
 import org.eclipse.aether.util.graph.selector.ScopeDependencySelector;
+import org.jboss.logging.Logger;
 import org.l2x6.jrebuild.core.mima.internal.CachingMavenModelReader;
 import org.l2x6.jrebuild.core.mima.internal.CachingMavenModelReader.ModelData;
 import org.l2x6.pom.tuner.model.Gav;
@@ -39,6 +40,7 @@ import org.l2x6.pom.tuner.model.Gavtc;
 import org.l2x6.pom.tuner.model.GavtcsPattern;
 
 public class DependencyCollector {
+    private static final Logger log = Logger.getLogger(DependencyCollector.class);
 
     public static Stream<ResolvedArtifactNode> collect(Context context, DependencyCollectorRequest request) {
 
@@ -49,6 +51,12 @@ public class DependencyCollector {
             collectConstraints(rootBom, modelReader, constraints::add);
         }
         request.additionalBoms().forEach(additionalBom -> collectConstraints(additionalBom, modelReader, constraints::add));
+
+        if (log.isInfoEnabled()) {
+            log.infof("Dependency constraints:\n    - %s",
+                    constraints.stream().map(d -> d.getArtifact().getGroupId() + ":" + d.getArtifact().getArtifactId() + ":"
+                            + d.getArtifact().getVersion()).collect(Collectors.joining("\n    - ")));
+        }
 
         RepositorySystemSession rSession = context.repositorySystemSession();
         final Collection<GavtcsPattern> excludes = request.excludes();
@@ -71,6 +79,8 @@ public class DependencyCollector {
         return request.rootArtifacts().parallelStream()
                 .map(rootGavtc -> {
 
+                    log.infof("Analyzing dependencies of %s", rootGavtc);
+
                     final Artifact rootArtifact = JrebuildUtils.toAetherArtifact(rootGavtc);
 
                     org.eclipse.aether.graph.Dependency dependency = new org.eclipse.aether.graph.Dependency(rootArtifact,
@@ -78,9 +88,11 @@ public class DependencyCollector {
                     final CollectRequest collectRequest = new CollectRequest(dependency, context.remoteRepositories());
                     collectRequest.setManagedDependencies(constraints);
 
+                    CollectResult result = null;
                     try {
-                        final DependencyNode rootNode = context.repositorySystem()
-                                .collectDependencies(repoSession, collectRequest)
+                        result = context.repositorySystem()
+                                .collectDependencies(repoSession, collectRequest);
+                        final DependencyNode rootNode = result
                                 .getRoot();
                         ResolvedArtifactNodeVisitor v = new ResolvedArtifactNodeVisitor(
                                 modelReader,
@@ -90,8 +102,20 @@ public class DependencyCollector {
                                         : null);
                         rootNode.accept(v);
                         return v.rootNode;
-                    } catch (DependencyCollectionException e) {
-                        throw new RuntimeException("Could not resolve " + rootGavtc);
+                    } catch (Exception e) {
+                        StringBuilder msg = new StringBuilder()
+                                .append("Could not resolve ").append(rootGavtc).append(" in thread ")
+                                .append(Thread.currentThread().getName());
+                        if (result != null) {
+                            List<org.eclipse.aether.graph.Dependency> deps = result.getRequest().getManagedDependencies();
+                            if (deps != null) {
+                                msg.append("; with dependencyManagement ");
+                                for (org.eclipse.aether.graph.Dependency dep : deps) {
+                                    msg.append("\n    - ").append(dep);
+                                }
+                            }
+                        }
+                        throw new RuntimeException(msg.toString(), e);
                     }
                 });
     }
@@ -126,6 +150,7 @@ public class DependencyCollector {
 
     static class ParentsAndImportsResolver {
         private final CachingMavenModelReader modelReader;
+        private final Deque<String> stack = new ArrayDeque<>();
 
         public ParentsAndImportsResolver(CachingMavenModelReader modelReader) {
             super();
@@ -133,19 +158,30 @@ public class DependencyCollector {
         }
 
         public void accept(Artifact a, Consumer<ResolvedArtifactNode> result) {
-            ModelData resp = modelReader.readModel(a);
+            stack.push(a.getGroupId() + ":" + a.getArtifactId() + ":" + a.getVersion());
 
-            /* Predecessors axis */
-            if (resp.parent() != null) {
-                /* Ignore the super pom */
-                Gavtc gav = resp.parent().toGavtc("pom", null);
-                List<ResolvedArtifactNode> children = new ArrayList<>();
-                traverse(resp.parent(), children::add);
-                result.accept(new ResolvedArtifactNode(gav, Collections.unmodifiableList(children)));
+            try {
+                ModelData resp = modelReader.readModel(a);
+
+                /* Predecessors axis */
+                if (resp.parent() != null) {
+                    /* Ignore the super pom */
+                    Gavtc gav = resp.parent().toGavtc("pom", null);
+                    List<ResolvedArtifactNode> children = new ArrayList<>();
+                    traverse(resp.parent(), children::add);
+                    result.accept(new ResolvedArtifactNode(gav, Collections.unmodifiableList(children)));
+                }
+
+                /* Imports axis */
+                traverseImports(resp.interpolatedModel(), result);
+            } catch (Exception e) {
+                throw new RuntimeException(
+                        "Could not resolve parents and imports in thread " + Thread.currentThread().getName()
+                                + "; dependency stack: \n"
+                                + stack.stream().collect(Collectors.joining("\n -> ")),
+                        e);
             }
-
-            /* Imports axis */
-            traverseImports(resp.interpolatedModel(), result);
+            stack.pop();
         }
 
         void traverseImports(Model interpolatedModel, Consumer<ResolvedArtifactNode> result) {
@@ -169,6 +205,7 @@ public class DependencyCollector {
         }
 
         void traverse(Gav a, Consumer<ResolvedArtifactNode> result) {
+            stack.push(a.toString());
             ModelData resp = modelReader.readModel(a);
 
             /* Predecessors axis */
@@ -182,6 +219,7 @@ public class DependencyCollector {
 
             /* Imports axis */
             traverseImports(resp.interpolatedModel(), result);
+            stack.pop();
         }
     }
 
@@ -212,7 +250,9 @@ public class DependencyCollector {
                     parentsAndImportsResolver.accept(artifact, children::add);
                 } catch (Exception e) {
                     throw new RuntimeException(
-                            "Could not resolve parents or imports of " + gavtc + "; dependency stack: \n" +
+                            "Could not resolve parents or imports of " + gavtc + " in thread "
+                                    + Thread.currentThread().getName()
+                                    + "; dependency stack: \n" +
                                     stack.stream()
                                             .map(ResolvedArtifactNode::gavtc)
                                             .map(Gavtc::toString)
