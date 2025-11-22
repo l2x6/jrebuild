@@ -1,0 +1,2 @@
+
+java -jar target/quarkus-app/quarkus-run.jar analyze --bom 'io.quarkiverse.cxf:quarkus-cxf-bom:3.29.0' --bom-includes 'io.quarkiverse.cxf:*' --excludes 'com.sun:tools,org.jboss:jandex,xerces:xerces-impl,xml-apis:xml-apis:2.6.2' --additional-boms='io.quarkus:quarkus-bom:3.29.0' > ~/zzz/log.txt 2>&1

@@ -46,14 +46,11 @@ public class GitScmLocator implements ScmLocator {
 
     public TagInfo resolveTagInfo(Gav toBuild) {
 
-        log.tracef("Looking up %s", toBuild);
-
-        final RecipeFile recipe = recipeGroupManager
-                .lookupScmInformation(toBuild);
-        log.tracef("Found recipe for %s: %s", toBuild, recipe);
+        final RecipeFile recipe = recipeGroupManager.lookupScmInformation(toBuild);
         if (recipe == null) {
             return null;
         }
+        log.tracef("Found recipe for %s: %s", toBuild, recipe);
         List<RepositoryInfo> repos = new ArrayList<>();
         List<TagMapping> allMappings = new ArrayList<>();
         ScmInfo main;

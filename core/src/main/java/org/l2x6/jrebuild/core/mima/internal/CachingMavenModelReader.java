@@ -47,7 +47,6 @@ public class CachingMavenModelReader extends MavenModelReader {
     public void register(Gav gav, List<RemoteRepository> remoteRepositories) {
         this.remoteRepositories.compute(gav, (k, v) -> {
             if (v == null || v.isEmpty()) {
-                log.warnf("Registering %s: %s", gav, remoteRepositories);
                 return remoteRepositories;
             } else {
                 return merge(gav, v, remoteRepositories);
@@ -130,7 +129,7 @@ public class CachingMavenModelReader extends MavenModelReader {
                 getParent(result),
                 gav,
                 result.interpolateModel(result.getRawModel()),
-                result.getEffectiveModel()));
+                result.getEffectiveModel(), repos));
     }
 
     static record InternalResult(ModelResponse response, ModelData modelData) {
@@ -174,7 +173,6 @@ public class CachingMavenModelReader extends MavenModelReader {
             }
         }
         List<RemoteRepository> result = copy != null ? Collections.unmodifiableList(copy) : old;
-        log.warnf("Registering merged %s: %s", gav, result);
         return result;
     }
 
@@ -195,7 +193,8 @@ public class CachingMavenModelReader extends MavenModelReader {
         return null;
     }
 
-    public record ModelData(Gav parent, Gav gav, Model interpolatedModel, Model effectiveModel) {
+    public record ModelData(Gav parent, Gav gav, Model interpolatedModel, Model effectiveModel,
+            List<RemoteRepository> repositories) {
     }
 
 }
