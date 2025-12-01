@@ -1,0 +1,263 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2025 jrebuild project contributors as indicated by the @author tags
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package org.l2x6.jrebuild.core.scm;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.lib.Ref;
+import org.jboss.logging.Logger;
+import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
+import org.l2x6.jrebuild.api.scm.ScmRef.Kind;
+
+public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
+    private static final Logger log = Logger.getLogger(GitRemoteScmLookup.class);
+
+    private final CompletableFuture<Map<String, UrlEntry>> urisToTagsToRevisions = new CompletableFuture<>();
+    private final Path cacheFile;
+    private final Instant minRetrievalTime;
+
+    private final BlockingQueue<Object> tasks = new LinkedBlockingQueue<>();
+    final Thread runner;
+
+    public GitRemoteScmLookup(Path cacheFile, Instant minRetrievalTime) {
+        super();
+        this.cacheFile = cacheFile;
+        if (minRetrievalTime.isAfter(Instant.now())) {
+            throw new IllegalArgumentException("minRetrievalTime cannot be in the future");
+        }
+        this.minRetrievalTime = minRetrievalTime;
+        tasks.add(new InitTask());
+        runner = new Thread(this::processQueue, cacheFile.getFileName().toString());
+        runner.start();
+    }
+
+    @Override
+    public String getRevision(String url, Kind kind, String name) {
+        return getRefs(url, kind).computeIfAbsent(name, null);
+    }
+
+    @Override
+    public Map<String, String> getRefs(String url, Kind kind) {
+        if (kind != Kind.TAG) {
+            throw new IllegalArgumentException("Looking up remote refs other than tags is unsupported");
+        }
+        final int timeout = 10;
+        try {
+            return urisToTagsToRevisions.get(timeout, TimeUnit.SECONDS)
+                    .compute(url, (k, v) -> {
+                        if (v == null || v.retrievalTime.isBefore(minRetrievalTime)) {
+                            v = lsRemote(k);
+                            /* Append the new entry to the local file asynchronously */
+                            tasks.add(v);
+                        }
+                        return v;
+                    }).refs;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Could not retrieve urisToTagsToRevisions within " + timeout + " seconds", e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException("Could not retrieve urisToTagsToRevisions within " + timeout + " seconds", e);
+        } catch (TimeoutException e) {
+            throw new RuntimeException("Could not retrieve urisToTagsToRevisions within " + timeout + " seconds", e);
+        }
+    }
+
+    UrlEntry lsRemote(String url) {
+        Map<String, String> tagsToHash;
+        final Collection<Ref> tags;
+        final Instant retrievalTime = Instant.now();
+        try {
+            tags = Git.lsRemoteRepository()
+                    .setRemote(url).setTags(true).call();
+        } catch (GitAPIException e) {
+            throw new RuntimeException("Failed to list of tags from " + url, e);
+        }
+        tagsToHash = new LinkedHashMap<>(tags.size());
+        for (var tag : tags) {
+            var name = tag.getName().replace("refs/tags/", "");
+            tagsToHash.put(name, tag.getPeeledObjectId() == null ? tag.getObjectId().name() : tag.getPeeledObjectId().name());
+        }
+        if (tagsToHash.isEmpty()) {
+            return new UrlEntry(url, retrievalTime, Collections.emptyMap());
+        }
+        return new UrlEntry(url, retrievalTime, Collections.unmodifiableMap(tagsToHash));
+    }
+
+    void processQueue() {
+        while (true) {
+            try {
+                final Collection<Object> tsks = new ArrayList<>();
+                final Object task = tasks.take();
+                if (task instanceof InitTask) {
+                    ((InitTask) task).run();
+                    continue;
+                }
+
+                tsks.add(task);
+                tasks.drainTo(tsks);
+
+                final Optional<Object> closeTask = tsks.stream()
+                        .filter(t -> t instanceof CloseTask)
+                        .findFirst();
+
+                if (closeTask.isPresent()) {
+                    /* Ignore any other tasks */
+                    ((CloseTask) closeTask.get()).run();
+                    /* Terminate the runner thread */
+                    return;
+                } else {
+                    store(cacheFile, (Collection<UrlEntry>) (Collection<?>) tsks);
+                }
+
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Could not run a tast in " + runner.getName(), e);
+            } catch (Exception e) {
+                throw new RuntimeException("Could not run a tast in " + runner.getName(), e);
+            }
+
+        }
+    }
+
+    static Map<String, UrlEntry> load(Path file) {
+        final Map<String, UrlEntry> result = new ConcurrentHashMap<>();
+        if (Files.isRegularFile(file)) {
+            try {
+                Iterator<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8).iterator();
+                String url = null;
+                Instant retrievalTime = null;
+                Map<String, String> val = null;
+                while (lines.hasNext()) {
+                    final String line = lines.next();
+                    if (line.isEmpty()) {
+                        continue;
+                    } else if (!line.startsWith(" ")) {
+                        if (url != null) {
+                            result.put(url, new UrlEntry(url, retrievalTime, val));
+                        }
+                        String[] entry = line.split(" ");
+                        if (entry.length != 2) {
+                            throw new IllegalStateException("Url line '" + line + "' has " + entry.length + " elements");
+                        }
+                        url = entry[0];
+                        retrievalTime = Instant.parse(entry[1]);
+                        val = new LinkedHashMap<>();
+                    } else {
+                        String[] entry = line.split(" ");
+                        if (entry.length != 3) {
+                            throw new IllegalStateException("Tag line '" + line + "' has " + entry.length + " elements");
+                        }
+                        val.put(entry[1], entry[2]);
+                    }
+                }
+                if (url != null) {
+                    result.put(url, new UrlEntry(url, retrievalTime, val));
+                }
+            } catch (IOException e) {
+                throw new RuntimeException("Could not read " + file, e);
+            }
+            log.infof("Loaded tag -> SHA mappings for %d git repositories from %s", result.size(), file);
+        }
+        return result;
+    }
+
+    static void store(Path cacheFile, UrlEntry tags) {
+        store(cacheFile, Collections.singletonList(tags));
+    }
+
+    static void store(Path cacheFile, Collection<UrlEntry> tags) {
+        try {
+            Files.createDirectories(cacheFile.getParent());
+        } catch (IOException e) {
+            throw new RuntimeException("Could not create " + cacheFile.getParent(), e);
+        }
+        try (Writer w = Files.newBufferedWriter(cacheFile, StandardCharsets.UTF_8, StandardOpenOption.CREATE,
+                StandardOpenOption.APPEND)) {
+            for (UrlEntry t : tags) {
+                t.append(w);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Could not write to " + cacheFile, e);
+        }
+    }
+
+    @Override
+    public void close() {
+        tasks.add(new CloseTask());
+    }
+
+    class CloseTask implements Runnable {
+
+        @Override
+        public void run() {
+            try {
+                final Map<String, UrlEntry> uris = urisToTagsToRevisions.get(2, TimeUnit.SECONDS);
+                final Set<String> sortedUris = new TreeSet<>(uris.keySet());
+                Files.createDirectories(cacheFile.getParent());
+                try (Writer w = Files.newBufferedWriter(cacheFile, StandardCharsets.UTF_8)) {
+                    for (String uri : sortedUris) {
+                        final UrlEntry tags = uris.get(uri);
+                        tags.append(w);
+                    }
+                }
+                log.infof("Stored tag -> SHA mappings for %d git repositories from %s", sortedUris.size(), cacheFile);
+            } catch (Exception e) {
+                throw new RuntimeException("Could not write to " + cacheFile, e);
+            }
+        }
+
+    }
+
+    class InitTask implements Runnable {
+        @Override
+        public void run() {
+            try {
+                urisToTagsToRevisions.complete(load(cacheFile));
+            } catch (Exception e) {
+                urisToTagsToRevisions.completeExceptionally(e);
+            }
+        }
+    }
+
+    static record UrlEntry(String url, Instant retrievalTime, Map<String, String> refs) {
+        public void append(Appendable out) throws IOException {
+            out.append(url).append(' ').append(retrievalTime.toString()).append('\n');
+            refs.forEach((kk, vv) -> {
+                try {
+                    out.append(' ').append(kk).append(' ').append(vv).append('\n');
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+            out.append('\n');
+        }
+
+    }
+
+}
