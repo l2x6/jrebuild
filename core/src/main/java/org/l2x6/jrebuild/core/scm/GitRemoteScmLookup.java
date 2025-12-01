@@ -59,7 +59,7 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
 
     @Override
     public String getRevision(String url, Kind kind, String name) {
-        return getRefs(url, kind).computeIfAbsent(name, null);
+        return getRefs(url, kind).get(name);
     }
 
     @Override
@@ -89,6 +89,7 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
     }
 
     UrlEntry lsRemote(String url) {
+        log.debugf("Loading tag -> SHA1 mappings from %s", url);
         Map<String, String> tagsToHash;
         final Collection<Ref> tags;
         final Instant retrievalTime = Instant.now();

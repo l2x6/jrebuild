@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2025 jrebuild project contributors as indicated by the @author tags
  * SPDX-License-Identifier: Apache-2.0
  */
-package org.l2x6.jrebuild.domino.scm.recipes.scm;
+package org.l2x6.jrebuild.domino.scm;
 
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
@@ -22,15 +22,17 @@ import org.jboss.logging.Logger;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.l2x6.jrebuild.api.scm.FqScmRef;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup.MutableRemoteScmLookup;
+import org.l2x6.jrebuild.api.scm.ScmRef.Kind;
 import org.l2x6.jrebuild.domino.scm.recipes.location.RecipeGroupManager;
 import org.l2x6.pom.tuner.model.Gav;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class GitScmLocatorTest {
-    private static final Logger log = Logger.getLogger(GitScmLocatorTest.class);
+class DominoBuildRecipesScmLocatorTest {
+    private static final Logger log = Logger.getLogger(DominoBuildRecipesScmLocatorTest.class);
     static String gitRepoUri;
     static Path gitRepoCloneDir;
 
@@ -74,26 +76,28 @@ class GitScmLocatorTest {
 
     @Test
     void lookupScmInfoRelaxNG() {
-        TagInfo tag = new GitScmLocator(gitRepoCloneDir, List.of(gitRepoUri), new MutableRemoteScmLookup())
-                .resolveTagInfo(Gav.of("relaxngDatatype:relaxngDatatype:20020414"));
+        FqScmRef tag = new DominoBuildRecipesScmLocator(gitRepoCloneDir, List.of(gitRepoUri), new MutableRemoteScmLookup())
+                .locate(Gav.of("relaxngDatatype:relaxngDatatype:20020414"));
         Assertions.assertNotNull(tag);
-        Assertions.assertEquals(tag.getTag(), tag.getHash());
-        Assertions.assertEquals(tag.getRepoInfo().getUri(),
+        Assertions.assertEquals(tag.scmRef().kind(), Kind.REVISION_ID);
+        Assertions.assertEquals(tag.scmRef().name(), tag.scmRef().revision());
+        Assertions.assertEquals(tag.repository().uri(),
                 "https://github.com/java-schema-utilities/relaxng-datatype-java.git");
     }
 
     @Test
     void lookupScmInfoCommonsLang() {
         ;
-        assertCommonsTag(new GitScmLocator(gitRepoCloneDir, List.of(gitRepoUri), scmLookup));
+        assertCommonsTag(new DominoBuildRecipesScmLocator(gitRepoCloneDir, List.of(gitRepoUri), scmLookup));
     }
 
-    private void assertCommonsTag(GitScmLocator locator) {
-        TagInfo tag = locator.resolveTagInfo(Gav.of("commons-lang:commons-lang:2.5"));
+    private void assertCommonsTag(DominoBuildRecipesScmLocator locator) {
+        FqScmRef tag = locator.locate(Gav.of("commons-lang:commons-lang:2.5"));
         Assertions.assertNotNull(tag);
-        Assertions.assertEquals(tag.getTag(), "LANG_2_5");
-        Assertions.assertNotEquals(tag.getTag(), tag.getHash());
-        Assertions.assertEquals(tag.getRepoInfo().getUri(), "https://github.com/apache/commons-lang.git");
+        Assertions.assertEquals(tag.scmRef().kind(), Kind.TAG);
+        Assertions.assertEquals(tag.scmRef().name(), "LANG_2_5");
+        Assertions.assertNotEquals(tag.scmRef().name(), tag.scmRef().revision());
+        Assertions.assertEquals(tag.repository().uri(), "https://github.com/apache/commons-lang.git");
     }
 
     @Test
@@ -104,7 +108,8 @@ class GitScmLocatorTest {
         final String repoUrl = gitRepoUri;
         {
             long t1 = System.currentTimeMillis();
-            final GitScmLocator locator = new GitScmLocator(gitCloneDir, List.of(repoUrl), scmLookup);
+            final DominoBuildRecipesScmLocator locator = new DominoBuildRecipesScmLocator(gitCloneDir, List.of(repoUrl),
+                    scmLookup);
             assertCommonsTag(locator);
 
             log.infof("Lookup time with clonig: %d ms", (System.currentTimeMillis() - t1));
@@ -117,7 +122,8 @@ class GitScmLocatorTest {
         // reuse the existing repo
         {
             long t1 = System.currentTimeMillis();
-            final GitScmLocator locator = new GitScmLocator(gitCloneDir, List.of(repoUrl), scmLookup);
+            final DominoBuildRecipesScmLocator locator = new DominoBuildRecipesScmLocator(gitCloneDir, List.of(repoUrl),
+                    scmLookup);
             assertCommonsTag(locator);
             log.infof("Lookup time with fetch & reset: %d ms", (System.currentTimeMillis() - t1));
         }
@@ -156,14 +162,14 @@ class GitScmLocatorTest {
     void runPassingTest(String version, String expected, String... tags) {
         Map<String, String> tagMap = new HashMap<>();
         Arrays.stream(tags).forEach(a -> tagMap.put(a, ""));
-        Assertions.assertEquals(expected, GitScmLocator.runTagHeuristic(version, tagMap));
+        Assertions.assertEquals(expected, DominoBuildRecipesScmLocator.runTagHeuristic(version, tagMap));
     }
 
     void runFailingTest(String version, String... tags) {
         Map<String, String> tagMap = new HashMap<>();
         Arrays.stream(tags).forEach(a -> tagMap.put(a, ""));
         Assertions.assertThrows(RuntimeException.class, () -> {
-            GitScmLocator.runTagHeuristic(version, tagMap);
+            DominoBuildRecipesScmLocator.runTagHeuristic(version, tagMap);
         });
     }
 

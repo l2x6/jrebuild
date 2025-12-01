@@ -97,9 +97,9 @@ public class RecipeLayoutManager implements RecipeDirectory {
     public RecipeFile lookup(Gav gav) {
 
         final Path groupFolder = scmInfoDirectory.resolve(gav.getGroupId().replace('.', File.separatorChar));
-        if (log.isDebugEnabled()) {
-            log.debugf("Searching for recipe in %s", shortenPath(groupFolder));
-        }
+        //if (log.isTraceEnabled()) {
+        //    log.tracef("Searching for recipe for %s in %s", gav, shortenPath(groupFolder));
+        //}
         if (Files.notExists(groupFolder)) {
             return null;
         }
