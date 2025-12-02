@@ -128,6 +128,48 @@ public record Buildspec(
     public static class Builder {
 
         private Map<String, String> values = new LinkedHashMap<>();
+        private int pos = 0;
+        private String src;
+
+        private String identifier() {
+            if (pos >= src.length()) {
+                throw new IllegalStateException(
+                        "Unexpected end of input in " + src + "; expected identifier start [A-Za-z_]");
+            }
+            int start = pos;
+            char ch = src.charAt(pos);
+            if (!(ch == '_'
+                    || (ch >= 'a' && ch <= 'z')
+                    || (ch >= 'A' && ch <= 'Z'))) {
+                throw new IllegalStateException(
+                        "Unexpected character '" + ch + "' at index " + pos + " in '" + src
+                                + "'; expected identifier start [A-Za-z_]");
+            }
+            pos++;
+            while (pos < src.length()) {
+                ch = src.charAt(pos);
+                if (!(ch == '_'
+                        || (ch >= '0' && ch <= '9')
+                        || (ch >= 'a' && ch <= 'z')
+                        || (ch >= 'A' && ch <= 'Z'))) {
+                    break;
+                }
+                pos++;
+            }
+            return src.substring(start, pos);
+        }
+
+        private void consume(char c) {
+            if (pos >= src.length()) {
+                throw new IllegalStateException("Unexpected end of input in " + src + "; expected " + c);
+            }
+            char ch;
+            if ((ch = src.charAt(pos)) != c) {
+                throw new IllegalStateException(
+                        "Unexpected character '" + ch + "' at index " + pos + " in '" + src + "'; expected " + c);
+            }
+            pos++;
+        }
 
         public Builder() {
             values.put("locale", "en_US");
@@ -142,209 +184,54 @@ public record Buildspec(
             if (line.isEmpty() || line.startsWith("#")) {
                 return this;
             }
-            KeyVal kv = new KeyValParser(line).parse();
-            values.put(kv.key, kv.val);
+            src = src == null ? line : src + "\n" + line;
+            String key = identifier();
+            consume('=');
+            String val = src.substring(pos);
+            int nlPos = lastIndexOf(val, '\n', 0, val.length(), 0);
+            int quotePos = lastIndexOf(val, '"', nlPos, val.length(), nlPos);
+            int hashPos = lastIndexOf(val, '#', quotePos, val.length(), -1);
+            if (hashPos >= 0) {
+                if (hashPos - 1 >= 0) {
+                    char preceding = val.charAt(hashPos - 1);
+                    if (preceding == ' ' || preceding == '\t') {
+                        val = val.substring(0, hashPos - 1).trim();
+                    }
+                }
+            }
+            if (val.startsWith("\"") && !val.endsWith("\"")) {
+                /* Unfinished multiline string */
+                pos = 0;
+                return this;
+            }
+            if (val.startsWith("\"") && val.endsWith("\"")) {
+                val = val.substring(1, val.length() - 1).replace("\\\\", "\\").replace("\\\"", "\"");
+            }
+            values.put(key, val);
+            src = null;
+            pos = 0;
             return this;
         }
 
-        static class KeyValParser {
-            int pos = 0;
-            final String src;
-
-            public KeyValParser(String src) {
-                super();
-                this.src = src;
+        void assertFinished() {
+            if (src != null) {
+                throw new IllegalStateException("Unparsed input at index " + pos + " in '" + src + "'");
             }
-
-            KeyVal parse() {
-                String key = identifier();
-                consume('=');
-                String val = value();
-                ws();
-                comment();
-                if (pos != src.length()) {
-                    throw new IllegalStateException("Unexpected characters at the end of input '" + src + "' at index " + pos);
-                }
-                return new KeyVal(key, val);
-            }
-
-            private void ws() {
-                char ch;
-                while (pos < src.length()) {
-                    ch = src.charAt(pos);
-                    if (!(ch == ' '
-                            || ch == '\t')) {
-                        break;
-                    }
-                    pos++;
-                }
-            }
-
-            private void comment() {
-                if (pos < src.length() && src.charAt(pos) == '#') {
-                    pos = src.length();
-                }
-            }
-
-            private void consume(char c) {
-                if (pos >= src.length()) {
-                    throw new IllegalStateException("Unexpected end of input in " + src + "; expected " + c);
-                }
-                char ch;
-                if ((ch = src.charAt(pos)) != c) {
-                    throw new IllegalStateException("Unexpected character " + ch + " at index " + pos + "; expected " + c);
-                }
-                pos++;
-            }
-
-            private String identifier() {
-                if (pos >= src.length()) {
-                    throw new IllegalStateException(
-                            "Unexpected end of input in " + src + "; expected identifier start [A-Za-z_]");
-                }
-                int start = pos;
-                char ch = src.charAt(pos);
-                if (!(ch == '_'
-                        || (ch >= 'a' && ch <= 'z')
-                        || (ch >= 'A' && ch <= 'Z'))) {
-                    throw new IllegalStateException(
-                            "Unexpected character " + ch + " at index " + pos + "; expected identifier start [A-Za-z_]");
-                }
-                pos++;
-                while (pos < src.length()) {
-                    ch = src.charAt(pos);
-                    if (!(ch == '_'
-                            || (ch >= '0' && ch <= '9')
-                            || (ch >= 'a' && ch <= 'z')
-                            || (ch >= 'A' && ch <= 'Z'))) {
-                        break;
-                    }
-                    pos++;
-                }
-                return src.substring(start, pos);
-            }
-
-            private String doubleQuotedExpression() {
-                consume('"');
-                String escapables = " \t\"\\";
-                StringBuilder result = new StringBuilder();
-                while (pos < src.length()) {
-                    char ch = src.charAt(pos);
-                    if (ch == '\\') {
-                        if ((pos + 1) < src.length()) {
-                            char ch2 = src.charAt(pos + 1);
-                            if (escapables.indexOf(ch2) >= 0) {
-                                /* Escaped escapable */
-                                result.append(ch2);
-                                pos += 2;
-                                continue;
-                            }
-                        }
-                    }
-                    if (ch == '$') {
-                        if ((pos + 1) < src.length()) {
-                            char ch2 = src.charAt(pos + 1);
-                            if (ch2 == '(') {
-                                subshell(result);
-                                continue;
-                            }
-                            if ("(".indexOf(ch2) >= 0) {
-                                /* Escaped escapable */
-                                result.append(ch2);
-                                pos += 2;
-                            }
-                        }
-                    }
-                    if (ch == '"') {
-                        break;
-                    }
-                    result.append(ch);
-                    pos++;
-                }
-                consume('"');
-                return result.toString();
-            }
-            private String span(char delimiter, String escapables) {
-                StringBuilder result = new StringBuilder();
-                while (pos < src.length()) {
-                    char ch = src.charAt(pos);
-                    if (ch == '\\') {
-                        if ((pos + 1) < src.length()) {
-                            char ch2 = src.charAt(pos + 1);
-                            if (escapables.indexOf(ch2) >= 0) {
-                                /* Escaped escapable */
-                                result.append(ch2);
-                                pos += 2;
-                                continue;
-                            }
-                        }
-                    }
-                    if (ch == delimiter) {
-                        break;
-                    }
-                    result.append(ch);
-                    pos++;
-                }
-                return result.toString();
-            }
-
-            private String value() {
-                if (pos >= src.length()) {
-                    return null;
-                }
-                char ch = src.charAt(pos);
-                if (ch == '"') {
-                    String result = doubleQuotedExpression();
-                    return result;
-                } else if (ch == '\'') {
-                    consume('\'');
-                    String result = span('\'', " \t'\\");
-                    consume('\'');
-                    return result;
-                }
-                /* Unqouted value */
-                return unquotedLiteral();
-            }
-
-            private String unquotedLiteral() {
-                if (pos >= src.length()) {
-                    throw new IllegalStateException(
-                            "Unexpected end of input in " + src + "; expected identifier start [A-Za-z_]");
-                }
-                StringBuilder result = new StringBuilder();
-                char ch;
-                while (pos < src.length()) {
-                    ch = src.charAt(pos);
-                    if (ch == '\\') {
-                        if ((pos + 1) < src.length()) {
-                            char ch2 = src.charAt(pos + 1);
-                            if (" \t'\"\\".indexOf(ch2) >= 0) {
-                                /* Escaped escapable */
-                                result.append(ch2);
-                                pos += 2;
-                                continue;
-                            }
-                        }
-                    }
-
-                    if (!("_+-./$*?[]~`{}#:".indexOf(ch) >= 0
-                            || (ch >= '0' && ch <= '9')
-                            || (ch >= 'a' && ch <= 'z')
-                            || (ch >= 'A' && ch <= 'Z'))) {
-                        break;
-                    }
-                    result.append(ch);
-                    pos++;
-                }
-                return result.toString();
-            }
-
         }
 
-        private record KeyVal(String key, String val) {
+        private int lastIndexOf(String val, char c, int start, int end, int defaultResult) {
+            end--;
+            while (end >= start) {
+                if (val.charAt(end) == c) {
+                    return end;
+                }
+                end--;
+            }
+            return defaultResult;
         }
 
         public Buildspec build() {
+            assertFinished();
 
             final String groupId = resolveMandatory("groupId");
             final String artifactId = resolveMandatory("artifactId");

@@ -66,12 +66,33 @@ class BuildspecTest {
 
     @Test
     void trailingComment() {
-        Builder b = mimimalBuilder();
+        Builder b = Buildspec.builder();
 
         b.line("newline=crlf # comment");
         b.line("foo=\"foo # bar\"");
+        b.assertFinished();
 
         Assertions.assertThat(b.resolve("newline")).isEqualTo("crlf");
+        Assertions.assertThat(b.resolve("foo")).isEqualTo("foo # bar");
+
+    }
+
+    @Test
+    void multilineComment() {
+        {
+            Builder b = Buildspec.builder();
+            b.line("foo=\"foo");
+            b.line("bar\"");
+            b.assertFinished();
+            Assertions.assertThat(b.resolve("foo")).isEqualTo("foo\nbar");
+        }
+        {
+            Builder b = Buildspec.builder();
+            b.line("foo=\"foo");
+            b.line("bar\" #comment");
+            b.assertFinished();
+            Assertions.assertThat(b.resolve("foo")).isEqualTo("foo\nbar");
+        }
 
     }
 
