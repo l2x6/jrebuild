@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2025 jrebuild project contributors as indicated by the @author tags
  * SPDX-License-Identifier: Apache-2.0
  */
-package org.l2x6.jrebuild.reproducible.central;
+package org.l2x6.jrebuild.reproducible.central.api;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.jboss.logging.Logger;
 
 public record Buildspec(
         /* 1. what does this rebuild? */
@@ -48,6 +49,8 @@ public record Buildspec(
         String toolchains,
         /** crlf for Windows, lf for Unix */
         Newline newline,
+        /** Set this if Git content newline does not match the runtime newline */
+        Newline newlineGit,
         /** optional */
         String umask,
         /** Etc/GMT */
@@ -84,12 +87,13 @@ public record Buildspec(
         String diffoscope,
         /** https://github.com/project_org/${artifactId}/issues/xx */
         String issue) {
+    private static final Logger log = Logger.getLogger(Buildspec.class);
 
     public static Buildspec of(Path file) {
         try (Stream<String> lines = Files.lines(file, StandardCharsets.UTF_8)) {
             Builder b = new Builder();
             lines.forEach(b::line);
-            return b.build();
+            return b.build(file);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not read " + file, e);
         } catch (Exception e) {
@@ -102,7 +106,7 @@ public record Buildspec(
     }
 
     public static enum Newline {
-        lf("lf"), crlf("crlf"), crlf_nogit("crlf-nogit");
+        lf("lf"), crlf("crlf");
 
         private final String literal;
 
@@ -114,14 +118,20 @@ public record Buildspec(
             return literal;
         }
 
-        public static Newline of(String literal) {
+        public static Newline of(String literal, Path file) {
             return switch (literal) {
+            case "11" -> lf; // see https://github.com/jvm-repo-rebuild/reproducible-central/pull/4555
             case "lf" -> lf;
             case "crlf" -> crlf;
-            case "crlf,no-auto.crlf" -> crlf; // TODO https://github.com/jvm-repo-rebuild/reproducible-central/issues/4556
-            case "crlf-nogit" -> crlf_nogit; // TODO https://github.com/jvm-repo-rebuild/reproducible-central/issues/4556
+            case "crlf,no-auto.crlf" -> report(file, literal, crlf); // TODO https://github.com/jvm-repo-rebuild/reproducible-central/issues/4556
+            case "crlf-nogit" -> report(file, literal, crlf); // TODO https://github.com/jvm-repo-rebuild/reproducible-central/issues/4556
             default -> throw new IllegalArgumentException("Unexpected " + Newline.class.getName() + " value: " + literal);
             };
+        }
+
+        static Newline report(Path file, String literal, Newline crlf) {
+            log.warn("Bad newline value " + literal + " in " + file);
+            return crlf;
         }
     }
 
@@ -230,7 +240,7 @@ public record Buildspec(
             return defaultResult;
         }
 
-        public Buildspec build() {
+        public Buildspec build(Path file) {
             assertFinished();
 
             final String groupId = resolveMandatory("groupId");
@@ -253,7 +263,9 @@ public record Buildspec(
             final String tool = resolveMandatory("tool");
             final String jdk = resolveMandatory("jdk");
             final String toolchains = resolve("toolchains");
-            final Newline newline = Newline.of(resolveMandatory("newline"));
+            final Newline newline = Newline.of(resolveMandatory("newline"), file);
+            final String rawNewlineGit = resolve("newlineGit");
+            final Newline newlineGit = rawNewlineGit == null ? null : Newline.of(rawNewlineGit, file);
             final String umask = resolve("umask");
             final String timezone = resolve("timezone");
             final String locale = resolve("locale");
@@ -269,7 +281,8 @@ public record Buildspec(
             final String issue = resolve("issue");
 
             return new Buildspec(groupId, artifactId, version, referenceRepo, layout, gitRepo, gitTag, sourceDistribution,
-                    sourcePath, sourceRmFiles, tool, jdk, toolchains, newline, umask, timezone, locale, os, arch, jdkForceAzul,
+                    sourcePath, sourceRmFiles, tool, jdk, toolchains, newline, newlineGit, umask, timezone, locale, os, arch,
+                    jdkForceAzul,
                     workdir, command, execBefore, execAfter, buildinfo, diffoscope, issue);
         }
 
