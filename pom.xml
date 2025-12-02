@@ -109,6 +109,7 @@
         <module>api</module>
         <module>core</module>
         <module>domino-build-recipes</module>
+        <module>reproducible-central</module>
         <module>cli</module>
     </modules>
 
@@ -378,6 +379,7 @@
 SPDX-License-Identifier: Apache-2.0</inlineHeader>
                             <excludes>
                                 <exclude>**/*.adoc</exclude>
+                                <exclude>**/*.buildspec</exclude>
                                 <exclude>**/*.expected.*</exclude>
                                 <exclude>**/create-extension-templates/*</exclude>
                                 <exclude>**/README.*</exclude>

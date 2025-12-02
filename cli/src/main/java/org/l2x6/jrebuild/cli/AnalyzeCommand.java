@@ -94,8 +94,8 @@ public class AnalyzeCommand implements Runnable {
     List<Gav> additionalBoms = List.of();
 
     @CommandLine.Option(names = {
-            "--domino-recipes-clone-dir" }, description = "A directory where to clone remote Domino recipes",
-            defaultValue = "~/.m2/domino-recipes")
+            "--buildspec-clone-dir" }, description = "A directory where to clone remote Domino recipes",
+            defaultValue = "~/.m2/buildspec")
     Path dominoCloneDir;
 
     @CommandLine.Option(names = {
