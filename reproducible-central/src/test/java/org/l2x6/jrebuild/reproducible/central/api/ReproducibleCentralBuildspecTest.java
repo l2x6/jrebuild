@@ -23,8 +23,8 @@ class ReproducibleCentralBuildspecTest {
 
     @Test
     void parseAll() throws IOException, InvalidRemoteException, TransportException, GitAPIException {
-        final String remote = "file:///home/ppalaga/orgs/pnc/reproducible-central/.git";
-        //final String remote = "https://github.com/jvm-repo-rebuild/reproducible-central.git";
+        //final String remote = "file:///home/ppalaga/orgs/pnc/reproducible-central/.git";
+        final String remote = "https://github.com/jvm-repo-rebuild/reproducible-central.git";
         final String branch = "master";
 
         Path userHome = Path.of(System.getProperty("user.home"));

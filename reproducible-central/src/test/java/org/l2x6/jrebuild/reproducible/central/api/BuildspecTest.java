@@ -9,6 +9,7 @@ import org.assertj.core.api.Assertions;
 import org.jboss.logging.Logger;
 import org.junit.jupiter.api.Test;
 import org.l2x6.jrebuild.reproducible.central.api.Buildspec.Builder;
+import org.l2x6.jrebuild.reproducible.central.api.Buildspec.Key;
 import org.l2x6.jrebuild.reproducible.central.api.Buildspec.Newline;
 
 class BuildspecTest {
@@ -52,15 +53,15 @@ class BuildspecTest {
         Builder b = mimimalBuilder();
 
         b
-                .line("gav=$groupId:$artifactId:$version")
-                .line("ga=${groupId}:${artifactId}")
-                .line("g=${groupId}")
-                .line("a=$artifactId");
+                .line("command=$groupId:$artifactId:$version")
+                .line("tool=${groupId}:${artifactId}")
+                .line("groupId=${groupId}")
+                .line("artifactId=$artifactId");
 
-        Assertions.assertThat(b.resolve("gav")).isEqualTo("g:a:1.2.3");
-        Assertions.assertThat(b.resolve("ga")).isEqualTo("g:a");
-        Assertions.assertThat(b.resolve("g")).isEqualTo("g");
-        Assertions.assertThat(b.resolve("a")).isEqualTo("a");
+        Assertions.assertThat(b.resolve(Key.command)).isEqualTo("g:a:1.2.3");
+        Assertions.assertThat(b.resolve(Key.tool)).isEqualTo("g:a");
+        Assertions.assertThat(b.resolve(Key.groupId)).isEqualTo("g");
+        Assertions.assertThat(b.resolve(Key.artifactId)).isEqualTo("a");
 
     }
 
@@ -69,11 +70,11 @@ class BuildspecTest {
         Builder b = Buildspec.builder();
 
         b.line("newline=crlf # comment");
-        b.line("foo=\"foo # bar\"");
+        b.line("command=\"foo # bar\"");
         b.assertFinished();
 
-        Assertions.assertThat(b.resolve("newline")).isEqualTo("crlf");
-        Assertions.assertThat(b.resolve("foo")).isEqualTo("foo # bar");
+        Assertions.assertThat(b.resolve(Key.newline)).isEqualTo("crlf");
+        Assertions.assertThat(b.resolve(Key.command)).isEqualTo("foo # bar");
 
     }
 
@@ -81,19 +82,26 @@ class BuildspecTest {
     void multilineComment() {
         {
             Builder b = Buildspec.builder();
-            b.line("foo=\"foo");
+            b.line("command=\"foo");
             b.line("bar\"");
             b.assertFinished();
-            Assertions.assertThat(b.resolve("foo")).isEqualTo("foo\nbar");
+            Assertions.assertThat(b.resolve(Key.command)).isEqualTo("foo\nbar");
         }
         {
             Builder b = Buildspec.builder();
-            b.line("foo=\"foo");
+            b.line("command=\"foo");
             b.line("bar\" #comment");
             b.assertFinished();
-            Assertions.assertThat(b.resolve("foo")).isEqualTo("foo\nbar");
+            Assertions.assertThat(b.resolve(Key.command)).isEqualTo("foo\nbar");
         }
 
+    }
+
+    @Test
+    void execBefore() {
+        Buildspec mvn = of("commons-daemon-1.5.1.buildspec");
+        Assertions.assertThat(mvn.execBefore()).isEqualTo(
+                "( cd src/native/unix && sh support/buildconf.sh )");
     }
 
     @Test

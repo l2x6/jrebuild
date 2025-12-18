@@ -105,6 +105,37 @@ public record Buildspec(
         return new Builder();
     }
 
+    enum Key {
+        groupId,
+        artifactId,
+        version,
+        referenceRepo,
+        layout,
+        gitRepo,
+        gitTag,
+        sourceDistribution,
+        sourcePath,
+        sourceRmFiles,
+        tool,
+        jdk,
+        toolchains,
+        newline,
+        newlineGit,
+        umask,
+        timezone,
+        locale,
+        os,
+        arch,
+        jdkForceAzul,
+        workdir,
+        command,
+        execBefore,
+        execAfter,
+        buildinfo,
+        diffoscope,
+        issue
+    }
+
     public static enum Newline {
         lf("lf"), crlf("crlf");
 
@@ -137,11 +168,11 @@ public record Buildspec(
 
     public static class Builder {
 
-        private Map<String, String> values = new LinkedHashMap<>();
+        private Map<Key, String> values = new LinkedHashMap<>();
         private int pos = 0;
         private String src;
 
-        private String identifier() {
+        private Key identifier() {
             if (pos >= src.length()) {
                 throw new IllegalStateException(
                         "Unexpected end of input in " + src + "; expected identifier start [A-Za-z_]");
@@ -166,7 +197,7 @@ public record Buildspec(
                 }
                 pos++;
             }
-            return src.substring(start, pos);
+            return Key.valueOf(src.substring(start, pos));
         }
 
         private void consume(char c) {
@@ -182,11 +213,10 @@ public record Buildspec(
         }
 
         public Builder() {
-            values.put("locale", "en_US");
-            values.put("timezone", "UTC");
-            values.put("umask", "0002");
-            values.put("referenceRepo", "https://repo.maven.apache.org/maven2/");
-
+            values.put(Key.locale, "en_US");
+            values.put(Key.timezone, "UTC");
+            values.put(Key.umask, "0002");
+            values.put(Key.referenceRepo, "https://repo.maven.apache.org/maven2/");
         }
 
         public Builder line(String line) {
@@ -195,7 +225,7 @@ public record Buildspec(
                 return this;
             }
             src = src == null ? line : src + "\n" + line;
-            String key = identifier();
+            Key key = identifier();
             consume('=');
             String val = src.substring(pos);
             int nlPos = lastIndexOf(val, '\n', 0, val.length(), 0);
@@ -243,42 +273,42 @@ public record Buildspec(
         public Buildspec build(Path file) {
             assertFinished();
 
-            final String groupId = resolveMandatory("groupId");
-            final String artifactId = resolveMandatory("artifactId");
-            final String version = resolveMandatory("version");
-            final String referenceRepo = resolve("referenceRepo");
-            final String layout = resolve("layout");
-            final String sourceDistribution = resolve("sourceDistribution");
+            final String groupId = resolveMandatory(Key.groupId);
+            final String artifactId = resolveMandatory(Key.artifactId);
+            final String version = resolveMandatory(Key.version);
+            final String referenceRepo = resolve(Key.referenceRepo);
+            final String layout = resolve(Key.layout);
+            final String sourceDistribution = resolve(Key.sourceDistribution);
             final String gitRepo;
             final String gitTag;
             if (sourceDistribution == null) {
-                gitRepo = resolveMandatory("gitRepo");
-                gitTag = resolveMandatory("gitTag");
+                gitRepo = resolveMandatory(Key.gitRepo);
+                gitTag = resolveMandatory(Key.gitTag);
             } else {
                 gitRepo = null;
                 gitTag = null;
             }
-            final String sourcePath = resolve("sourcePath");
-            final String sourceRmFiles = resolve("sourceRmFiles");
-            final String tool = resolveMandatory("tool");
-            final String jdk = resolveMandatory("jdk");
-            final String toolchains = resolve("toolchains");
-            final Newline newline = Newline.of(resolveMandatory("newline"), file);
-            final String rawNewlineGit = resolve("newlineGit");
+            final String sourcePath = resolve(Key.sourcePath);
+            final String sourceRmFiles = resolve(Key.sourceRmFiles);
+            final String tool = resolveMandatory(Key.tool);
+            final String jdk = resolveMandatory(Key.jdk);
+            final String toolchains = resolve(Key.toolchains);
+            final Newline newline = Newline.of(resolveMandatory(Key.newline), file);
+            final String rawNewlineGit = resolve(Key.newlineGit);
             final Newline newlineGit = rawNewlineGit == null ? null : Newline.of(rawNewlineGit, file);
-            final String umask = resolve("umask");
-            final String timezone = resolve("timezone");
-            final String locale = resolve("locale");
-            final String os = resolve("os");
-            final String arch = resolve("arch");
-            final boolean jdkForceAzul = Boolean.parseBoolean(resolve("jdkForceAzul"));
-            final String workdir = resolve("workdir");
-            final String command = resolveMandatory("command");
-            final String execBefore = resolve("execBefore");
-            final String execAfter = resolve("execAfter");
-            final String buildinfo = resolveMandatory("buildinfo");
-            final String diffoscope = resolve("diffoscope");
-            final String issue = resolve("issue");
+            final String umask = resolve(Key.umask);
+            final String timezone = resolve(Key.timezone);
+            final String locale = resolve(Key.locale);
+            final String os = resolve(Key.os);
+            final String arch = resolve(Key.arch);
+            final boolean jdkForceAzul = Boolean.parseBoolean(resolve(Key.jdkForceAzul));
+            final String workdir = resolve(Key.workdir);
+            final String command = resolveMandatory(Key.command);
+            final String execBefore = resolve(Key.execBefore);
+            final String execAfter = resolve(Key.execAfter);
+            final String buildinfo = resolveMandatory(Key.buildinfo);
+            final String diffoscope = resolve(Key.diffoscope);
+            final String issue = resolve(Key.issue);
 
             return new Buildspec(groupId, artifactId, version, referenceRepo, layout, gitRepo, gitTag, sourceDistribution,
                     sourcePath, sourceRmFiles, tool, jdk, toolchains, newline, newlineGit, umask, timezone, locale, os, arch,
@@ -289,7 +319,7 @@ public record Buildspec(
         private static final Pattern BRACED_EXPRESSION_PATTERN = Pattern.compile("\\$\\{([^\\}]+)\\}");
         private static final Pattern SIMPLE_EXPRESSION_PATTERN = Pattern.compile("\\$([a-zA-Z_][0-9a-zA-Z_]*)");
 
-        private String resolveMandatory(String key) {
+        private String resolveMandatory(Key key) {
             String result = resolve(key);
             if (result == null) {
                 throw new IllegalStateException("Missing required key " + key);
@@ -297,7 +327,7 @@ public record Buildspec(
             return result;
         }
 
-        String resolve(String key) {
+        String resolve(Key key) {
             final String val = values.get(key);
             if (val == null) {
                 return null;
