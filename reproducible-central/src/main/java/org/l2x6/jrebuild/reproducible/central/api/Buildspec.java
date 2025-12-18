@@ -4,17 +4,22 @@
  */
 package org.l2x6.jrebuild.reproducible.central.api;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.AbstractMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.jboss.logging.Logger;
+import org.l2x6.cli.assured.CliAssured;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 public record Buildspec(
         /* 1. what does this rebuild? */
@@ -24,6 +29,7 @@ public record Buildspec(
         String artifactId,
         /** Central Repository coordinates for the Reference release (for multi-module, pick an artitrary module) */
         String version,
+        String display,
         /** Where are reference binaries? */
         String referenceRepo,
         /**
@@ -90,25 +96,124 @@ public record Buildspec(
     private static final Logger log = Logger.getLogger(Buildspec.class);
 
     public static Buildspec of(Path file) {
-        try (Stream<String> lines = Files.lines(file, StandardCharsets.UTF_8)) {
-            Builder b = new Builder();
-            lines.forEach(b::line);
-            return b.build(file);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read " + file, e);
+        try {
+            return of(file, Files.readString(file, StandardCharsets.UTF_8));
         } catch (Exception e) {
-            throw new RuntimeException("Could not parse " + file + ": " + e.getMessage(), e);
+            throw new RuntimeException("Could not parse " + file, e);
         }
+    }
+
+    public static Buildspec of(Path file, String document) {
+        final ObjectMapper mapper = JsonMapper.builder()
+                .build();
+        final String mini = minify(document);
+        final String json = parseToJson(mini);
+        JsonNode f = mapper.readTree(json);
+        Builder b = new Builder();
+
+        for (JsonNode stmt : f.path("Stmts")) {
+            JsonNode assigns = stmt.path("Cmd").path("Assigns");
+            if (assigns.size() != 1) {
+                throw new IllegalStateException("Assigns.size() != 1 for node " + assigns);
+            }
+            JsonNode assign = assigns.get(0);
+            String k = assign.path("Name").path("Value").asString();
+            JsonNode parts = assign.path("Value").path("Parts");
+            String value = join(k, mini, parts);
+            //log.info(key + "=" + value);
+            b.entry(k, value);
+        }
+        return b.build(file);
+    }
+
+    static String join(String key, String src, JsonNode parts) {
+        if (parts.size() == 1) {
+            JsonNode part0 = parts.get(0);
+            String type = part0.path("Type").asString();
+            if (type.equals("Lit")) {
+                return part0.path("Value").asString();
+            } else if (type.equals("DblQuoted")) {
+                int start = part0.path("Left").path("Offset").asInt() + 1;
+                int end = part0.path("Right").path("Offset").asInt();
+                return src.substring(start, end);
+            } else if (type.equals("SglQuoted")) {
+                int start = part0.path("Left").path("Offset").asInt() + 1;
+                int end = part0.path("Right").path("Offset").asInt();
+                return src.substring(start, end);
+            } else if (type.equals("CmdSubst")) {
+                int start = part0.path("Pos").path("Offset").asInt();
+                int end = part0.path("End").path("Offset").asInt();
+                return src.substring(start, end);
+            } else if (type.equals("ParamExp")) {
+                int start = part0.path("Pos").path("Offset").asInt();
+                int end = part0.path("End").path("Offset").asInt();
+                return src.substring(start, end);
+            } else {
+                throw new IllegalStateException("Unexpected type " + type + " for key " + key);
+            }
+        } else if (parts.size() == 0) {
+            return null;
+        } else {
+            //log.info("Joining key " + key + ": " + parts.toPrettyString());
+            JsonNode part0 = parts.get(0);
+            int start = part0.path("Pos").path("Offset").asInt();
+            int end = parts.get(parts.size() - 1).path("End").path("Offset").asInt();
+            return src.substring(start, end);
+        }
+    }
+
+    static String parseToJson(String file) {
+        final ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        CliAssured
+                .command("shfmt", "--to-json")
+                .stdin(file)
+                .then()
+                .stdout()
+                //.log(log::info)
+                .redirect(baos)
+                .execute()
+                .assertSuccess();
+        byte[] bytes = baos.toByteArray();
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    static String minify(String file) {
+        final ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        CliAssured
+                .command("shfmt", "--minify")
+                .stdin(file)
+                .then()
+                .stdout()
+                //.log(log::info)
+                .redirect(baos)
+                .execute()
+                .assertSuccess();
+        byte[] bytes = baos.toByteArray();
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 
     public static Builder builder() {
         return new Builder();
     }
 
+    static String readAndRemoveComments(Path file) {
+        final ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        CliAssured
+                .command("sh", "-c", "shfmt --minify | shfmt --to-json")
+                .stdin(file)
+                .then()
+                .stdout()
+                .redirect(Path.of("target/commons-daemon-1.5.1.json"))
+                .execute()
+                .assertSuccess();
+        return new String(baos.toByteArray(), StandardCharsets.UTF_8);
+    }
+
     enum Key {
         groupId,
         artifactId,
         version,
+        display,
         referenceRepo,
         layout,
         gitRepo,
@@ -133,7 +238,17 @@ public record Buildspec(
         execAfter,
         buildinfo,
         diffoscope,
-        issue
+        issue;
+
+        private static final Map<String, Key> KEYS = Stream.of(values())
+                .map(key -> new AbstractMap.SimpleImmutableEntry<String, Key>(key.name(), key))
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue));
+
+        public static Key of(String rawKey) {
+            return KEYS.get(rawKey);
+        }
     }
 
     public static enum Newline {
@@ -168,114 +283,26 @@ public record Buildspec(
 
     public static class Builder {
 
-        private Map<Key, String> values = new LinkedHashMap<>();
-        private int pos = 0;
-        private String src;
+        private Map<String, String> values = new LinkedHashMap<>();
 
-        private Key identifier() {
-            if (pos >= src.length()) {
-                throw new IllegalStateException(
-                        "Unexpected end of input in " + src + "; expected identifier start [A-Za-z_]");
-            }
-            int start = pos;
-            char ch = src.charAt(pos);
-            if (!(ch == '_'
-                    || (ch >= 'a' && ch <= 'z')
-                    || (ch >= 'A' && ch <= 'Z'))) {
-                throw new IllegalStateException(
-                        "Unexpected character '" + ch + "' at index " + pos + " in '" + src
-                                + "'; expected identifier start [A-Za-z_]");
-            }
-            pos++;
-            while (pos < src.length()) {
-                ch = src.charAt(pos);
-                if (!(ch == '_'
-                        || (ch >= '0' && ch <= '9')
-                        || (ch >= 'a' && ch <= 'z')
-                        || (ch >= 'A' && ch <= 'Z'))) {
-                    break;
-                }
-                pos++;
-            }
-            return Key.valueOf(src.substring(start, pos));
-        }
-
-        private void consume(char c) {
-            if (pos >= src.length()) {
-                throw new IllegalStateException("Unexpected end of input in " + src + "; expected " + c);
-            }
-            char ch;
-            if ((ch = src.charAt(pos)) != c) {
-                throw new IllegalStateException(
-                        "Unexpected character '" + ch + "' at index " + pos + " in '" + src + "'; expected " + c);
-            }
-            pos++;
+        public void entry(String key, String value) {
+            values.put(key, value);
         }
 
         public Builder() {
-            values.put(Key.locale, "en_US");
-            values.put(Key.timezone, "UTC");
-            values.put(Key.umask, "0002");
-            values.put(Key.referenceRepo, "https://repo.maven.apache.org/maven2/");
-        }
-
-        public Builder line(String line) {
-            line = line.trim();
-            if (line.isEmpty() || line.startsWith("#")) {
-                return this;
-            }
-            src = src == null ? line : src + "\n" + line;
-            Key key = identifier();
-            consume('=');
-            String val = src.substring(pos);
-            int nlPos = lastIndexOf(val, '\n', 0, val.length(), 0);
-            int quotePos = lastIndexOf(val, '"', nlPos, val.length(), nlPos);
-            int hashPos = lastIndexOf(val, '#', quotePos, val.length(), -1);
-            if (hashPos >= 0) {
-                if (hashPos - 1 >= 0) {
-                    char preceding = val.charAt(hashPos - 1);
-                    if (preceding == ' ' || preceding == '\t') {
-                        val = val.substring(0, hashPos - 1).trim();
-                    }
-                }
-            }
-            if (val.startsWith("\"") && !val.endsWith("\"")) {
-                /* Unfinished multiline string */
-                pos = 0;
-                return this;
-            }
-            if (val.startsWith("\"") && val.endsWith("\"")) {
-                val = val.substring(1, val.length() - 1).replace("\\\\", "\\").replace("\\\"", "\"");
-            }
-            values.put(key, val);
-            src = null;
-            pos = 0;
-            return this;
-        }
-
-        void assertFinished() {
-            if (src != null) {
-                throw new IllegalStateException("Unparsed input at index " + pos + " in '" + src + "'");
-            }
-        }
-
-        private int lastIndexOf(String val, char c, int start, int end, int defaultResult) {
-            end--;
-            while (end >= start) {
-                if (val.charAt(end) == c) {
-                    return end;
-                }
-                end--;
-            }
-            return defaultResult;
+            values.put(Key.locale.name(), "en_US");
+            values.put(Key.timezone.name(), "UTC");
+            values.put(Key.umask.name(), "0002");
+            values.put(Key.referenceRepo.name(), "https://repo.maven.apache.org/maven2/");
+            values.put(Key.display.name(), "${groupId}:${artifactId}");
         }
 
         public Buildspec build(Path file) {
-            assertFinished();
 
             final String groupId = resolveMandatory(Key.groupId);
             final String artifactId = resolveMandatory(Key.artifactId);
             final String version = resolveMandatory(Key.version);
+            final String display = resolveMandatory(Key.display);
             final String referenceRepo = resolve(Key.referenceRepo);
             final String layout = resolve(Key.layout);
             final String sourceDistribution = resolve(Key.sourceDistribution);
@@ -310,7 +337,8 @@ public record Buildspec(
             final String diffoscope = resolve(Key.diffoscope);
             final String issue = resolve(Key.issue);
 
-            return new Buildspec(groupId, artifactId, version, referenceRepo, layout, gitRepo, gitTag, sourceDistribution,
+            return new Buildspec(groupId, artifactId, version, display, referenceRepo, layout, gitRepo, gitTag,
+                    sourceDistribution,
                     sourcePath, sourceRmFiles, tool, jdk, toolchains, newline, newlineGit, umask, timezone, locale, os, arch,
                     jdkForceAzul,
                     workdir, command, execBefore, execAfter, buildinfo, diffoscope, issue);
@@ -328,26 +356,41 @@ public record Buildspec(
         }
 
         String resolve(Key key) {
-            final String val = values.get(key);
+            return resolve(key.name());
+        }
+
+        String resolve(String key) {
+            String val = values.get(key);
             if (val == null) {
                 return null;
             }
-            CharSequence src = replace(BRACED_EXPRESSION_PATTERN, val);
-            src = replace(SIMPLE_EXPRESSION_PATTERN, src);
-            final String newVal = src.toString();
-            values.put(key, newVal);
-            return newVal;
+            while (true) {
+                final String newVal = eval(val);
+                if (newVal.equals(val)) {
+                    val = newVal;
+                    break;
+                }
+                val = newVal;
+            }
+            values.put(key, val);
+            return val;
         }
 
-        private StringBuilder replace(Pattern pattern, CharSequence val) {
+        private String eval(final String val) {
+            CharSequence src = replace(BRACED_EXPRESSION_PATTERN, true, val);
+            src = replace(SIMPLE_EXPRESSION_PATTERN, false, src);
+            return src.toString();
+        }
+
+        private StringBuilder replace(Pattern pattern, boolean braced, CharSequence val) {
             StringBuilder sb = new StringBuilder();
             {
                 Matcher m = pattern.matcher(val);
                 while (m.find()) {
                     String k = m.group(1);
-                    final String v = values.get(k);
+                    String v = values.get(k);
                     if (v == null) {
-                        throw new IllegalStateException("Unresolved expression ${" + k + "} in " + val);
+                        v = braced ? ("${" + k + "}") : ("$" + k);
                     }
                     m.appendReplacement(sb, v.replace("\\", "\\\\").replace("$", "\\$"));
                 }
