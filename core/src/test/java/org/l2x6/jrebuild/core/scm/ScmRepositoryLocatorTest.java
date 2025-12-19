@@ -47,6 +47,7 @@ public class ScmRepositoryLocatorTest {
                     context.lookup().lookup(CachingMavenModelReader.class).get()::readEffectiveModel,
                     new MutableRemoteScmLookup().put("https://github.com/l2x6/jrebuild-test", Map.of("0.0.1", "deadbeef")),
                     gitRepoCloneDir,
+                    Collections.emptyList(),
                     Collections.emptyList());
             List<String> trees = DependencyCollector.collect(context, re)
                     .map(resolvedArtifact -> {

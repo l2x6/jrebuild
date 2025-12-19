@@ -146,6 +146,11 @@
                 <version>${project.version}</version>
             </dependency>
             <dependency>
+                <groupId>org.l2x6.jrebuild</groupId>
+                <artifactId>jrebuild-reproducible-central</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>eu.maveniverse.maven.mima</groupId>
                 <artifactId>context</artifactId>
                 <version>${mima.version}</version>

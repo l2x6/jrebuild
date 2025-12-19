@@ -83,18 +83,18 @@ public class DominoBuildRecipesScmLocator extends AbstractScmLocator {
                     }
                     final String sha = tagsToHash.get(tagTemplate);
                     if (sha != null) {
-                        return new FqScmRef(new ScmRef(Kind.TAG, tagTemplate, sha), new ScmRepository("git", uri));
+                        return new FqScmRef(new ScmRef(Kind.TAG, tagTemplate, sha), new ScmRepository("git", uri), "🁻");
                     }
                     if (isSha1(tagTemplate)) {
                         return new FqScmRef(new ScmRef(Kind.REVISION_ID, tagTemplate, tagTemplate),
-                                new ScmRepository("git", uri));
+                                new ScmRepository("git", uri), "🁻");
                     }
                 } else {
                     log.tracef("%s: pattern %s does not match version %s", gav, mapping.getPattern(), version);
                 }
                 ScmRef ref = guessTag(gav, uri);
                 if (ref != null) {
-                    return new FqScmRef(ref, new ScmRepository("git", uri));
+                    return new FqScmRef(ref, new ScmRepository("git", uri), "🁻");
                 }
             }
         }

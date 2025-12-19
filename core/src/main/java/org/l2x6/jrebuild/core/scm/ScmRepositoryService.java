@@ -22,6 +22,7 @@ import org.l2x6.jrebuild.core.dep.ResolvedArtifactNode;
 import org.l2x6.jrebuild.core.tree.Node;
 import org.l2x6.jrebuild.core.tree.Visitor;
 import org.l2x6.jrebuild.domino.scm.DominoBuildRecipesScmLocator;
+import org.l2x6.jrebuild.reproducible.central.ReproducibleCentralScmLocator;
 import org.l2x6.pom.tuner.model.Gav;
 import org.l2x6.pom.tuner.model.Gavtc;
 
@@ -34,8 +35,10 @@ public class ScmRepositoryService implements ScmLocator {
             Function<Gav, Model> getEffectiveModel,
             RemoteScmLookup remoteScm,
             Path cloneDirectory,
+            List<String> reproducibleCentralGitRepositories,
             List<String> dominoRecipeUrls) {
         return new ScmRepositoryService(List.of(
+                new ReproducibleCentralScmLocator(cloneDirectory, reproducibleCentralGitRepositories, remoteScm),
                 new DominoBuildRecipesScmLocator(cloneDirectory, dominoRecipeUrls, remoteScm),
                 new PomScmLocator(getEffectiveModel, remoteScm),
                 new TerminalScmLocator()));

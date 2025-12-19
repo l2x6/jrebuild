@@ -47,13 +47,19 @@ public record BuildGroup(
 
     @Override
     public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(scmRef.isUnknown() ? "❌ " : "✅ ");
+        sb.append(scmRef);
         if (artifacts.isEmpty()) {
-            return scmRef + " []";
+            sb.append(" []");
         } else if (artifacts.size() == 1) {
-            return scmRef + " [" + artifacts.iterator().next() + "]";
+            sb.append(" [").append(artifacts.iterator().next()).append("]");
         }
-        return scmRef + " [" + artifacts.stream().map(a -> a.getGroupId() + ":*:" + a.getVersion()).distinct()
-                .collect(Collectors.joining(", ")) + "]";
+        sb.append(" [");
+        sb.append(artifacts.stream().map(a -> a.getGroupId() + ":*:" + a.getVersion()).distinct()
+                .collect(Collectors.joining(", ")));
+        sb.append("]");
+        return sb.toString();
     }
 
 }

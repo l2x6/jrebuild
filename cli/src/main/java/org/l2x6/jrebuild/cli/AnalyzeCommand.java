@@ -103,6 +103,12 @@ public class AnalyzeCommand implements Runnable {
     List<String> dominoRecipeUrls = List.of();
 
     @CommandLine.Option(names = {
+            "--reproducible-central-urls" },
+            description = "A list of Git URLs hosting Reproducible Central buildspecs, such as https://github.com/jvm-repo-rebuild/reproducible-central.git",
+            split = ",")
+    List<String> reproducibleCentralUrls = List.of();
+
+    @CommandLine.Option(names = {
             "--ls-remotes-older-than" }, description = """
                     A timestamp in 2025-12-01T10:15:30Z format determining how fresh the entries in ls-remotes-cache must be.
                     You should typically set this to the release date of the root artifacts you are analyzing.
@@ -170,6 +176,7 @@ public class AnalyzeCommand implements Runnable {
                         context.lookup().lookup(CachingMavenModelReader.class).get()::readEffectiveModel,
                         remoteScm,
                         dominoCloneDir,
+                        reproducibleCentralUrls,
                         dominoRecipeUrls);
 
                 DependencyCollector.collect(context, re)

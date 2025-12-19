@@ -27,6 +27,10 @@ public record ScmRef(
         return new ScmRef(Kind.UNKNOWN, "unknown-for-version-" + version, null);
     }
 
+    public boolean isUnknown() {
+        return kind.isUnknown();
+    }
+
     @Override
     public String toString() {
         return name + "@" + revision;
