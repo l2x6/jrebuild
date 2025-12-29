@@ -44,10 +44,10 @@ public class RecipeRepositoryManager implements RecipeDirectory {
                 try (Git git = GitUtils.cloneOrFetchAndReset(remote, branch, directory, 1)) {
                 }
                 delegate.complete(new RecipeRepositoryManager(directory));
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 delegate.completeExceptionally(e);
             }
-        }, "LazyRecipeDirectory-" + threadIndex.incrementAndGet()).start();
+        }, "DominoRecipeDirectoryLoader-" + threadIndex.incrementAndGet()).start();
         return new LazyRecipeDirectory(delegate);
     }
 

@@ -7,6 +7,7 @@ package org.l2x6.jrebuild.core.scm;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
@@ -35,8 +36,8 @@ public class ScmRepositoryService implements ScmLocator {
             Function<Gav, Model> getEffectiveModel,
             RemoteScmLookup remoteScm,
             Path cloneDirectory,
-            List<String> reproducibleCentralGitRepositories,
-            List<String> dominoRecipeUrls) {
+            Collection<String> reproducibleCentralGitRepositories,
+            Collection<String> dominoRecipeUrls) {
         return new ScmRepositoryService(List.of(
                 new ReproducibleCentralScmLocator(cloneDirectory, reproducibleCentralGitRepositories, remoteScm),
                 new DominoBuildRecipesScmLocator(cloneDirectory, dominoRecipeUrls, remoteScm),

@@ -52,11 +52,11 @@ public class PomScmLocator extends AbstractScmLocator {
         Objects.requireNonNull(repository, "repository cannot be null");
         if (tag == null || "HEAD".equals(tag)) {
             final ScmRef ref = guessTag(gav, repository.uri());
-            return new FqScmRef(ref != null ? ref : ScmRef.createUnknown(gav.getVersion()), repository, "<>");
+            return new FqScmRef(ref != null ? ref : ScmRef.createUnknown(gav.getVersion()), repository, "♢");
         }
         try {
             final ScmRef ref = validateTag(repository.uri(), tag, gav.getVersion());
-            return new FqScmRef(ref, repository, "<>");
+            return new FqScmRef(ref, repository, "♢");
         } catch (Exception e) {
             throw new RuntimeException("Invalid SCM info in pom of " + gav, e);
         }

@@ -17,24 +17,23 @@ import org.l2x6.pom.tuner.model.Ga;
 import org.l2x6.pom.tuner.model.Gav;
 
 public record Buildinfo(Gav gav, Set<Gav> gavs) {
-    public static Buildinfo of(Path file) {
-        Properties props = new Properties();
-
-        try (InputStream in = Files.newInputStream(file)) {
-            props.load(in);
-        } catch (IOException e) {
-            throw new RuntimeException("Could not read " + file, e);
-        }
-
-        final String version = props.getProperty("version");
-        final Gav gav = new Gav(props.getProperty("group-id"), props.getProperty("artifact-id"), version);
+    public static Buildinfo of(Path file, final Gav gav) {
 
         final Set<Gav> gavs = new LinkedHashSet<>();
-        for (Entry<Object, Object> en : props.entrySet()) {
-            String key = (String) en.getKey();
-            if (key.startsWith("outputs.") && key.endsWith(".coordinates")) {
-                String val = (String) en.getValue();
-                gavs.add(Ga.of(val).toGav(version));
+        if (Files.isRegularFile(file)) {
+            final String version = gav.getVersion();
+            Properties props = new Properties();
+            try (InputStream in = Files.newInputStream(file)) {
+                props.load(in);
+            } catch (IOException e) {
+                throw new RuntimeException("Could not read " + file, e);
+            }
+            for (Entry<Object, Object> en : props.entrySet()) {
+                String key = (String) en.getKey();
+                if (key.startsWith("outputs.") && key.endsWith(".coordinates")) {
+                    String val = (String) en.getValue();
+                    gavs.add(Ga.of(val).toGav(version));
+                }
             }
         }
         return new Buildinfo(gav, Collections.unmodifiableSet(gavs));

@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -37,7 +38,7 @@ public class DominoBuildRecipesScmLocator extends AbstractScmLocator {
 
     private final RecipeGroupManager recipeGroupManager;
 
-    public DominoBuildRecipesScmLocator(Path gitCloneBaseDir, List<String> recipeRepos, RemoteScmLookup scmLookup) {
+    public DominoBuildRecipesScmLocator(Path gitCloneBaseDir, Collection<String> recipeRepos, RemoteScmLookup scmLookup) {
         super(scmLookup);
         Objects.requireNonNull(gitCloneBaseDir, "gitCloneBaseDir");
         this.recipeGroupManager = RecipeGroupManager.of(gitCloneBaseDir, recipeRepos);

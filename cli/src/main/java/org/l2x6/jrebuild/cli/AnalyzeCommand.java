@@ -15,21 +15,26 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.jboss.logging.Logger;
 import org.l2x6.jrebuild.core.dep.DependencyCollector;
 import org.l2x6.jrebuild.core.dep.DependencyCollectorRequest;
 import org.l2x6.jrebuild.core.dep.DependencyCollectorRequest.Builder;
 import org.l2x6.jrebuild.core.dep.ManagedGavsSelector;
+import org.l2x6.jrebuild.core.dep.ResolvedArtifactNode;
 import org.l2x6.jrebuild.core.mima.JRebuildRuntime;
 import org.l2x6.jrebuild.core.mima.internal.CachingMavenModelReader;
 import org.l2x6.jrebuild.core.scm.GitRemoteScmLookup;
 import org.l2x6.jrebuild.core.scm.ScmRepositoryService;
 import org.l2x6.jrebuild.core.scm.ScmRepositoryService.ScmInfoNode;
 import org.l2x6.jrebuild.core.tree.PrintVisitor;
+import org.l2x6.jrebuild.core.tree.Visitor;
 import org.l2x6.pom.tuner.model.Gav;
+import org.l2x6.pom.tuner.model.GavSet;
 import org.l2x6.pom.tuner.model.Gavtc;
 import org.l2x6.pom.tuner.model.GavtcsPattern;
 import org.l2x6.pom.tuner.model.GavtcsSet;
@@ -62,13 +67,18 @@ public class AnalyzeCommand implements Runnable {
             "--excludes" },
             description = """
                     A list of patterns in format groupId[:artifactId[:version[:type[:classifier]]]] where each segment may contain one or more * wildcards.
-                    These patterns are used
+                    Artifacts matching any of these patterns are excluded from the set of root artifacts and if any of those artifacts is hit during
+                    the analysis then the artifact is ignored and the analysis won't descend to its dependencies.
                     """,
             converter = GavtcsPatternConverter.class, split = ",")
     List<GavtcsPattern> excludes = List.of();
 
     @CommandLine.Option(names = {
-            "--root-artifacts" }, description = "Root artifacts whose dependencies should be processed",
+            "--root-artifacts" },
+            description = """
+                    Root artifacts whose dependencies should be analyzed in format groupId:artifactId:version[:type[:classifier]].
+                    Note that root artifacts can also be specified via --bom, --bom-includes (and --excludes if needed).
+                    """,
             converter = GavtcConverter.class, split = ",")
     List<Gavtc> rootArtifacts = List.of();
 
@@ -89,24 +99,40 @@ public class AnalyzeCommand implements Runnable {
 
     @CommandLine.Option(names = {
             "--additional-boms" },
-            description = "A list of groupId:artifactId:version whose constraints should enforced in addition to the main BOM specified through --bom",
+            description = """
+                    A list of groupId:artifactId:version whose constraints should be enforced in addition to the main BOM specified through --bom.
+                    BOMs specified via --additional-boms do not extend the universe for --bom-includes.
+                    """,
             converter = GavConverter.class, split = ",")
     List<Gav> additionalBoms = List.of();
 
     @CommandLine.Option(names = {
-            "--buildspec-clone-dir" }, description = "A directory where to clone remote Domino recipes",
+            "--cut-stem" },
+            description = """
+                    A list of patterns in format groupId[:artifactId[:version[:type[:classifier]]]] where each segment may contain one or more * wildcards.
+                    After creating the initial dependency trees of all root artiafcts, these patterns are used for removing some
+                    (possibly empty) rooted part (i.e. stem) of those dependecy trees before searching for build metadata.
+                    This is typically useful when you want to analyze only dependencies of some project, but not the project itself.
+                    In such a situation, you would use --exclude-stem to exclude the artifacts belonging to that project.
+                    """,
+            converter = GavSetConverter.class)
+    GavSet stem = GavSet.excludeAll();
+
+    @CommandLine.Option(names = {
+            "--buildspec-clone-dir" },
+            description = "A directory where to clone remote Domino and Reproducible Central recipes",
             defaultValue = "~/.m2/buildspec")
     Path dominoCloneDir;
 
     @CommandLine.Option(names = {
             "--domino-recipes-urls" }, description = "A list of Git URLs hosting Domino build recipes", split = ",")
-    List<String> dominoRecipeUrls = List.of();
+    Set<String> dominoRecipeUrls = Set.of();
 
     @CommandLine.Option(names = {
             "--reproducible-central-urls" },
             description = "A list of Git URLs hosting Reproducible Central buildspecs, such as https://github.com/jvm-repo-rebuild/reproducible-central.git",
             split = ",")
-    List<String> reproducibleCentralUrls = List.of();
+    Set<String> reproducibleCentralUrls = Set.of();
 
     @CommandLine.Option(names = {
             "--ls-remotes-older-than" }, description = """
@@ -115,8 +141,10 @@ public class AnalyzeCommand implements Runnable {
                     E.g. if you are analyzing artigfacts from a project that was released on 2025-12-01T10:15:30Z,
                     then it is fine to set --ls-remotes-older-than=2025-12-01T10:15:30Z
                     because it should be fine to assume that all its dependencies were tagged before that date.
-                    If not specified, then it is set to first the exection time on the given day.
+                    If not specified, then it is set to first the execution time on the given day.
+                    Use --ls-remotes-older-than=now to force refreshing the entries in ls-remotes-cache.
                     """)
+    String rawMinRetievalTime;
     Instant minRetievalTime;
 
     @CommandLine.Option(names = {
@@ -136,8 +164,12 @@ public class AnalyzeCommand implements Runnable {
         lsRemotesCache = resolveHome(userHome, lsRemotesCache);
 
         final Path cacheDir = userHome.resolve(".cache/jrebuild");
-        if (minRetievalTime == null) {
+        if (rawMinRetievalTime == null) {
             minRetievalTime = defaultMinRetrievalTime(cacheDir);
+        } else if ("now".equals(rawMinRetievalTime)) {
+            minRetievalTime = Instant.now();
+        } else {
+            minRetievalTime = Instant.parse(rawMinRetievalTime);
         }
 
         Runtime runtime = JRebuildRuntime.getInstance();
@@ -180,6 +212,7 @@ public class AnalyzeCommand implements Runnable {
                         dominoRecipeUrls);
 
                 DependencyCollector.collect(context, re)
+                        .flatMap(resolvedArtifact -> new CutStemVisitor(stem).walk(resolvedArtifact).result())
                         .map(resolvedArtifact -> {
                             ScmInfoNode rootScmInfoNode = locator.newVisitor().walk(resolvedArtifact).rootNode();
                             return PrintVisitor.toString(rootScmInfoNode);
@@ -246,6 +279,37 @@ public class AnalyzeCommand implements Runnable {
         return result;
     }
 
+    static class CutStemVisitor implements Visitor<ResolvedArtifactNode, CutStemVisitor> {
+
+        private final Set<ResolvedArtifactNode> stemComplement = new LinkedHashSet<>();
+        private final GavSet stem;
+
+        public CutStemVisitor(GavSet stem) {
+            super();
+            this.stem = stem;
+        }
+
+        public Stream<ResolvedArtifactNode> result() {
+            return stemComplement.stream();
+        }
+
+        @Override
+        public boolean enter(ResolvedArtifactNode node) {
+            if (stem.contains(node.gavtc().toGav())) {
+                return true;
+            } else {
+                stemComplement.add(node);
+                return false;
+            }
+        }
+
+        @Override
+        public boolean leave(ResolvedArtifactNode node) {
+            return true;
+        }
+
+    }
+
     static class GavConverter implements ITypeConverter<Gav> {
         public Gav convert(String value) throws Exception {
             return Gav.of(value);
@@ -261,6 +325,12 @@ public class AnalyzeCommand implements Runnable {
     static class GavtcsPatternConverter implements ITypeConverter<GavtcsPattern> {
         public GavtcsPattern convert(String value) throws Exception {
             return GavtcsPattern.of(value);
+        }
+    }
+
+    static class GavSetConverter implements ITypeConverter<GavSet> {
+        public GavSet convert(String value) throws Exception {
+            return GavSet.builder().defaultResult(GavSet.excludeAll()).includes(value).build();
         }
     }
 

@@ -7,6 +7,7 @@ package org.l2x6.jrebuild.domino.scm.recipes.location;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.regex.Pattern;
 import org.jboss.logging.Logger;
@@ -26,7 +27,7 @@ public class RecipeGroupManager {
      */
     private final List<RecipeDirectory> repositories;
 
-    public static RecipeGroupManager of(Path gitCloneBaseDir, List<String> recipeRepos) {
+    public static RecipeGroupManager of(Path gitCloneBaseDir, Collection<String> recipeRepos) {
         //checkout the git recipe database and load the recipes
         final List<RecipeDirectory> managers = new ArrayList<>(recipeRepos.size());
         for (var url : recipeRepos) {

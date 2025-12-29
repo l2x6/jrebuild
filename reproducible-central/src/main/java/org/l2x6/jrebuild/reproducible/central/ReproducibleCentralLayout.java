@@ -57,12 +57,16 @@ public class ReproducibleCentralLayout implements BuildspecRepository {
         final Path groupIdPath = baseDir.resolve(groupId.replace('.', '/'));
         if (Files.isDirectory(groupIdPath)) {
             try (Stream<Path> files = Files.walk(groupIdPath)) {
-                files.forEach(p -> {
-                    BuildinfoEntry bie = relPathToBuildinfoEntry.computeIfAbsent(
-                            p.toString(),
-                            k -> BuildinfoEntry.of(baseDir.resolve(k)));
-                    result.add(bie);
-                });
+                files
+                        .filter(Files::isRegularFile)
+                        .filter(p -> p.getFileName().toString().endsWith(".buildspec"))
+                        .map(groupIdPath::resolve)
+                        .forEach(p -> {
+                            BuildinfoEntry bie = relPathToBuildinfoEntry.computeIfAbsent(
+                                    p.toString(),
+                                    k -> BuildinfoEntry.of(p));
+                            result.add(bie);
+                        });
             } catch (IOException e) {
                 throw new UncheckedIOException("Could not walk " + groupId, e);
             }
@@ -71,10 +75,10 @@ public class ReproducibleCentralLayout implements BuildspecRepository {
     }
 
     private record BuildinfoEntry(Buildinfo buildinfo, Buildspec buildspec) {
-        public static BuildinfoEntry of(Path buildinfoPath) {
-            Path buildspecPath = buildinfoPath.getParent()
-                    .resolve(buildinfoPath.getFileName().toString().replace(".buildinfo", ".buildspec"));
-            return new BuildinfoEntry(Buildinfo.of(buildinfoPath), Buildspec.of(buildspecPath));
+        public static BuildinfoEntry of(Path buildspecPath) {
+            final Buildspec buildspec = Buildspec.of(buildspecPath);
+            final Path buildinfoPath = buildspecPath.getParent().resolve(buildspec.buildinfo());
+            return new BuildinfoEntry(Buildinfo.of(buildinfoPath, buildspec.gav()), buildspec);
         }
     }
 
@@ -90,11 +94,11 @@ public class ReproducibleCentralLayout implements BuildspecRepository {
             try {
                 try (Git git = GitUtils.cloneOrFetchAndReset(remote, branch, directory, 1)) {
                 }
-                delegate.complete(new ReproducibleCentralLayout(directory));
-            } catch (Exception e) {
+                delegate.complete(new ReproducibleCentralLayout(directory.resolve("content")));
+            } catch (Throwable e) {
                 delegate.completeExceptionally(e);
             }
-        }, "LazyBuildspecRepository-" + threadIndex.incrementAndGet()).start();
+        }, "ReproducibleCentralRecipeDirectoryLoader-" + threadIndex.incrementAndGet()).start();
         return new LazyBuildspecRepository(delegate);
     }
 

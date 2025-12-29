@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.jboss.logging.Logger;
 import org.l2x6.cli.assured.CliAssured;
+import org.l2x6.pom.tuner.model.Gav;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
@@ -92,7 +93,8 @@ public record Buildspec(
         /** ${artifactId}-${version}.diffoscope */
         String diffoscope,
         /** https://github.com/project_org/${artifactId}/issues/xx */
-        String issue) {
+        String issue,
+        Gav gav) {
     private static final Logger log = Logger.getLogger(Buildspec.class);
 
     public static Buildspec of(Path file) {
@@ -328,7 +330,8 @@ public record Buildspec(
                     sourceDistribution,
                     sourcePath, sourceRmFiles, tool, jdk, toolchains, newline, newlineGit, umask, timezone, locale, os, arch,
                     jdkForceAzul,
-                    workdir, command, execBefore, execAfter, buildinfo, diffoscope, issue);
+                    workdir, command, execBefore, execAfter, buildinfo, diffoscope, issue,
+                    new Gav(groupId, artifactId, version));
         }
 
         private static final Pattern BRACED_EXPRESSION_PATTERN = Pattern.compile("\\$\\{([^\\}]+)\\}");
