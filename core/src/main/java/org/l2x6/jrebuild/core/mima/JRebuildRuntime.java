@@ -7,10 +7,10 @@ package org.l2x6.jrebuild.core.mima;
 import eu.maveniverse.maven.mima.context.Context;
 import eu.maveniverse.maven.mima.context.ContextOverrides;
 import eu.maveniverse.maven.mima.context.Lookup;
-import eu.maveniverse.maven.mima.context.Runtime;
-import eu.maveniverse.maven.mima.context.Runtimes;
 import eu.maveniverse.maven.mima.context.internal.IteratingLookup;
-import eu.maveniverse.maven.mima.context.internal.RuntimeSupport;
+import eu.maveniverse.maven.mima.runtime.shared.PreBoot;
+import eu.maveniverse.maven.mima.runtime.standalonestatic.MemoizingRepositorySystemSupplierLookup;
+import eu.maveniverse.maven.mima.runtime.standalonestatic.StandaloneStaticRuntime;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -23,42 +23,22 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import org.apache.maven.model.building.ModelBuilder;
 import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.artifact.Artifact;
 import org.eclipse.aether.repository.WorkspaceReader;
 import org.eclipse.aether.repository.WorkspaceRepository;
 import org.l2x6.jrebuild.core.mima.internal.JRebuildLookup;
+import org.l2x6.jrebuild.core.mima.internal.JrebuildModelBuilderFactory;
 import org.l2x6.pom.tuner.MavenSourceTree;
 import org.l2x6.pom.tuner.model.Ga;
 import org.l2x6.pom.tuner.model.Module;
 import org.l2x6.pom.tuner.model.Profile;
 
-public class JRebuildRuntime implements Runtime {
-    private final RuntimeSupport delegate;
+public class JRebuildRuntime extends StandaloneStaticRuntime {
 
-    JRebuildRuntime(RuntimeSupport delegate) {
+    JRebuildRuntime() {
         super();
-        this.delegate = delegate;
-    }
-
-    public String name() {
-        return delegate.name();
-    }
-
-    public String version() {
-        return delegate.version();
-    }
-
-    public int priority() {
-        return delegate.priority();
-    }
-
-    public String mavenVersion() {
-        return delegate.mavenVersion();
-    }
-
-    public boolean managedRepositorySystem() {
-        return delegate.managedRepositorySystem();
     }
 
     public Context create(ContextOverrides overrides) {
@@ -67,7 +47,7 @@ public class JRebuildRuntime implements Runtime {
     }
 
     public Context create(ContextOverrides overrides, Consumer<DefaultRepositorySystemSession> sessionCustomizer) {
-        final Context ctx = delegate.create(overrides);
+        final Context ctx = super.create(overrides);
         final Path basedir = overrides.getBasedirOverride();
 
         final DefaultRepositorySystemSession session = new DefaultRepositorySystemSession(ctx.repositorySystemSession());
@@ -84,7 +64,7 @@ public class JRebuildRuntime implements Runtime {
         lookups.add(ctx.lookup());
         final Lookup lookup = new IteratingLookup(lookups);
         Context result = new Context(
-                delegate,
+                this,
                 overrides,
                 ctx.basedir(),
                 ctx.mavenUserHome(),
@@ -97,6 +77,11 @@ public class JRebuildRuntime implements Runtime {
                 ctx.repositorySystem()::shutdown);
         lazyContext.set(result);
         return result;
+    }
+
+    @Override
+    protected Lookup createRepositorySystemLookup(PreBoot preBoot) {
+        return new JrebuildMemoizingRepositorySystemSupplierLookup();
     }
 
     static class JRebuildWorkspace implements WorkspaceReader {
@@ -192,7 +177,16 @@ public class JRebuildRuntime implements Runtime {
     }
 
     public static JRebuildRuntime getInstance() {
-        return new JRebuildRuntime((RuntimeSupport) Runtimes.INSTANCE.getRuntime());
+        return new JRebuildRuntime();
+    }
+
+    static class JrebuildMemoizingRepositorySystemSupplierLookup extends MemoizingRepositorySystemSupplierLookup {
+
+        @Override
+        protected ModelBuilder getModelBuilder() {
+            return memoize(ModelBuilder.class, new JrebuildModelBuilderFactory().newInstance());
+        }
+
     }
 
 }

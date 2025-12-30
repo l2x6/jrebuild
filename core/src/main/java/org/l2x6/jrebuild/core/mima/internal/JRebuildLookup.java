@@ -13,7 +13,7 @@ import java.util.function.Supplier;
 public class JRebuildLookup implements Lookup {
     private final Supplier<Context> lazyContext;
     private volatile Optional<CachingMavenModelReader> modelReader;
-    private final Object lock = new Object();
+    private final Object modelReaderLock = new Object();
 
     public JRebuildLookup(Supplier<Context> lazyContext) {
         this.lazyContext = lazyContext;
@@ -24,7 +24,7 @@ public class JRebuildLookup implements Lookup {
         if (MavenModelReader.class.isAssignableFrom(type)) {
             Optional<?> mr;
             if ((mr = modelReader) == null) {
-                synchronized (lock) {
+                synchronized (modelReaderLock) {
                     if ((mr = modelReader) == null) {
                         mr = modelReader = Optional.of(new CachingMavenModelReader(lazyContext.get()));
                     }

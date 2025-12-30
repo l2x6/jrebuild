@@ -54,12 +54,13 @@ public class ScmRepositoryLocatorTest {
                         ScmInfoNode rootScmInfoNode = locator.newVisitor().walk(resolvedArtifact).rootNode();
                         return PrintVisitor.toString(rootScmInfoNode);
                     })
+                    .collect().asList().await().indefinitely().stream()
                     .peek(p -> log.infof("Scm Repos:\n%s", p))
                     .collect(Collectors.toList());
             Assertions.assertThat(trees).containsExactly(
                     """
-                            https://github.com/l2x6/jrebuild-test#0.0.1@deadbeef [org.l2x6.jrebuild.test-project:*:0.0.1]
-                            `- https://github.com/l2x6/jrebuild-test-transitive#unknown-for-version-0.0.1@null [org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1:jar]
+                            ✅ ♢ https://github.com/l2x6/jrebuild-test#0.0.1@deadbeef [org.l2x6.jrebuild.test-project:*:0.0.1]
+                            `- ❌ ♢ https://github.com/l2x6/jrebuild-test-transitive#unknown-for-version-0.0.1@null [org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1:jar]
                             """);
         }
     }

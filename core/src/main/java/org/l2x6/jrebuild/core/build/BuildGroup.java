@@ -54,11 +54,12 @@ public record BuildGroup(
             sb.append(" []");
         } else if (artifacts.size() == 1) {
             sb.append(" [").append(artifacts.iterator().next()).append("]");
+        } else {
+            sb.append(" [");
+            sb.append(artifacts.stream().map(a -> a.getGroupId() + ":*:" + a.getVersion()).distinct()
+                    .collect(Collectors.joining(", ")));
+            sb.append("]");
         }
-        sb.append(" [");
-        sb.append(artifacts.stream().map(a -> a.getGroupId() + ":*:" + a.getVersion()).distinct()
-                .collect(Collectors.joining(", ")));
-        sb.append("]");
         return sb.toString();
     }
 
