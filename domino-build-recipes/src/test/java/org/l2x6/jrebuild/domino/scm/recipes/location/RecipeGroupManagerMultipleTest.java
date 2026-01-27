@@ -27,82 +27,121 @@ public class RecipeGroupManagerMultipleTest {
 
     @Test
     public void testGroupIdBasedRecipe() throws IOException {
-        Gav req = new Gav("io.test", "test", "1.0");
-        RecipeFile result = manager.lookupScmInformation(req);
-        Assertions.assertEquals("https://github.com/test-override/test.git",
-                readScmUrl(result.recipeFile()));
+        {
+            Gav req = new Gav("io.test", "test", "1.0");
+            List<RecipeFile> results = manager.lookupScmInformation(req);
+            org.assertj.core.api.Assertions.assertThat(results).hasSize(2);
+            RecipeFile result = results.get(0);
+            Assertions.assertEquals("https://github.com/test-override/test.git",
+                    readScmUrl(result.recipeFile()));
 
-        Assertions.assertTrue(
-                BuildRecipe.SCM.getHandler().parse(result.recipeFile()).isPrivateRepo());
+            Assertions.assertTrue(
+                    BuildRecipe.SCM.getHandler().parse(result.recipeFile()).isPrivateRepo());
+        }
 
-        req = new Gav("io.test.acme", "test-acme", "1.0");
-        result = manager.lookupScmInformation(req);
-        Assertions.assertEquals("https://github.com/test-override/test-acme.git",
-                readScmUrl(result.recipeFile()));
-        Assertions.assertFalse(
-                BuildRecipe.SCM.getHandler().parse(result.recipeFile()).isPrivateRepo());
+        {
+            Gav req = new Gav("io.test.acme", "test-acme", "1.0");
+            List<RecipeFile> results = manager.lookupScmInformation(req);
+            org.assertj.core.api.Assertions.assertThat(results).hasSize(2);
+            RecipeFile result = results.get(0);
+            Assertions.assertEquals("https://github.com/test-override/test-acme.git",
+                    readScmUrl(result.recipeFile()));
+            Assertions.assertFalse(
+                    BuildRecipe.SCM.getHandler().parse(result.recipeFile()).isPrivateRepo());
+        }
 
-        req = new Gav("io.foo", "test-foo", "1.0");
-        result = manager.lookupScmInformation(req);
-        Assertions.assertEquals("https://github.com/foo/foo.git",
-                readScmUrl(result.recipeFile()));
-        Assertions.assertFalse(
-                BuildRecipe.SCM.getHandler().parse(result.recipeFile()).isPrivateRepo());
+        {
+            Gav req = new Gav("io.foo", "test-foo", "1.0");
+            List<RecipeFile> results = manager.lookupScmInformation(req);
+            org.assertj.core.api.Assertions.assertThat(results).hasSize(1);
+            RecipeFile result = results.get(0);
+            Assertions.assertEquals("https://github.com/foo/foo.git",
+                    readScmUrl(result.recipeFile()));
+            Assertions.assertFalse(
+                    BuildRecipe.SCM.getHandler().parse(result.recipeFile()).isPrivateRepo());
+        }
     }
 
     @Test
     public void testVersionOverride() {
-        //the original override should still work
-        Gav req = new Gav("io.quarkus", "quarkus-core", "1.0-alpha1");
-        var result = manager.lookupScmInformation(req);
-        Assertions.assertEquals("https://github.com/stuartwdouglas/quarkus.git",
-                readScmUrl(result.recipeFile()));
+        {
+            //the original override should still work
+            Gav req = new Gav("io.quarkus", "quarkus-core", "1.0-alpha1");
+            List<RecipeFile> results = manager.lookupScmInformation(req);
+            org.assertj.core.api.Assertions.assertThat(results).hasSize(2);
+            RecipeFile result = results.get(0);
+            Assertions.assertEquals("https://github.com/stuartwdouglas/quarkus.git",
+                    readScmUrl(result.recipeFile()));
+        }
 
-        //but now we have added a new one as well
-        req = new Gav("io.quarkus", "quarkus-core", "1.0-alpha2");
-        result = manager.lookupScmInformation(req);
-        Assertions.assertEquals("https://github.com/stuartwdouglas/quarkus.git",
-                readScmUrl(result.recipeFile()));
+        {
+            //but now we have added a new one as well
+            Gav req = new Gav("io.quarkus", "quarkus-core", "1.0-alpha2");
+            List<RecipeFile> results = manager.lookupScmInformation(req);
+            org.assertj.core.api.Assertions.assertThat(results).hasSize(2);
+            RecipeFile result = results.get(0);
+            Assertions.assertEquals("https://github.com/stuartwdouglas/quarkus.git",
+                    readScmUrl(result.recipeFile()));
+        }
     }
 
     @Test
     public void testArtifactOverride() {
-        //this should still work as normal, it is not overriden
-        Gav req = new Gav("io.quarkus", "quarkus-gizmo", "1.0");
-        var result = manager.lookupScmInformation(req);
-        Assertions.assertEquals("https://github.com/quarkusio/gizmo.git",
-                readScmUrl(result.recipeFile()));
+        {
+            //this should still work as normal, it is not overriden
+            Gav req = new Gav("io.quarkus", "quarkus-gizmo", "1.0");
+            List<RecipeFile> results = manager.lookupScmInformation(req);
+            org.assertj.core.api.Assertions.assertThat(results).hasSize(1);
+            RecipeFile result = results.get(0);
+            Assertions.assertEquals("https://github.com/quarkusio/gizmo.git",
+                    readScmUrl(result.recipeFile()));
+        }
 
-        req = new Gav("io.test", "test-gizmo", "1.0");
-        result = manager.lookupScmInformation(req);
-        Assertions.assertEquals("https://github.com/test/gizmo.git",
-                readScmUrl(result.recipeFile()));
+        {
+            Gav req = new Gav("io.test", "test-gizmo", "1.0");
+            List<RecipeFile> results = manager.lookupScmInformation(req);
+            org.assertj.core.api.Assertions.assertThat(results).hasSize(2);
+            RecipeFile result = results.get(0);
+            Assertions.assertEquals("https://github.com/test/gizmo.git",
+                    readScmUrl(result.recipeFile()));
+        }
     }
 
     @Test
     public void testArtifactAndVersionOverride() {
-        //same here
-        Gav req = new Gav("io.quarkus", "quarkus-gizmo", "1.0-alpha1");
-        var result = manager.lookupScmInformation(req);
-        Assertions.assertEquals("https://github.com/stuartwdouglas/gizmo.git",
-                readScmUrl(result.recipeFile()));
+        {
+            //same here
+            Gav req = new Gav("io.quarkus", "quarkus-gizmo", "1.0-alpha1");
+            List<RecipeFile> results = manager.lookupScmInformation(req);
+            org.assertj.core.api.Assertions.assertThat(results).hasSize(2);
+            RecipeFile result = results.get(0);
+            Assertions.assertEquals("https://github.com/stuartwdouglas/gizmo.git",
+                    readScmUrl(result.recipeFile()));
+        }
 
-        req = new Gav("io.test", "test-gizmo", "1.0-alpha1");
-        result = manager.lookupScmInformation(req);
-        Assertions.assertEquals("https://github.com/stuartwdouglas/gizmo.git",
-                readScmUrl(result.recipeFile()));
-
-        req = new Gav("io.test", "test-gizmo", "0.9");
-        result = manager.lookupScmInformation(req);
-        Assertions.assertEquals("https://github.com/stuartwdouglas/gizmo.git",
-                readScmUrl(result.recipeFile()));
+        {
+            Gav req = new Gav("io.test", "test-gizmo", "1.0-alpha1");
+            List<RecipeFile> results = manager.lookupScmInformation(req);
+            org.assertj.core.api.Assertions.assertThat(results).hasSize(2);
+            RecipeFile result = results.get(0);
+            Assertions.assertEquals("https://github.com/stuartwdouglas/gizmo.git",
+                    readScmUrl(result.recipeFile()));
+        }
+        {
+            Gav req = new Gav("io.test", "test-gizmo", "0.9");
+            List<RecipeFile> results = manager.lookupScmInformation(req);
+            org.assertj.core.api.Assertions.assertThat(results).hasSize(2);
+            RecipeFile result = results.get(0);
+            Assertions.assertEquals("https://github.com/stuartwdouglas/gizmo.git",
+                    readScmUrl(result.recipeFile()));
+        }
     }
 
     @Test
     public void testNoGroupLevelBuild() {
         Gav req = new Gav("io.vertx", "not-real", "1.0");
         var result = manager.lookupScmInformation(req);
-        Assertions.assertNull(result);
+        org.assertj.core.api.Assertions.assertThat(result).isEmpty();
     }
 
     private String readScmUrl(Path scmPath) {

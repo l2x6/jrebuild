@@ -36,17 +36,17 @@ public class DependencyCollectorTest {
                         .includeOptionalDependencies(true)
                         .includeParentsAndImports(false),
                 """
-                        org.l2x6.jrebuild.test-project:jrebuild-test-api:0.0.1:jar
+                        🟢 org.l2x6.jrebuild.test-project:jrebuild-test-api:0.0.1:jar
                         """,
                 """
-                        org.l2x6.jrebuild.test-project:jrebuild-test-impl:0.0.1:jar
-                        +- org.l2x6.jrebuild.test-project:jrebuild-test-api:0.0.1:jar
-                        `- org.l2x6.jrebuild.test-project:jrebuild-test-optional:0.0.1:jar
-                           `- org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1:jar
+                        🟢 org.l2x6.jrebuild.test-project:jrebuild-test-impl:0.0.1:jar
+                        +- 🟢 org.l2x6.jrebuild.test-project:jrebuild-test-api:0.0.1:jar
+                        `- 🟢 org.l2x6.jrebuild.test-project:jrebuild-test-optional:0.0.1:jar
+                           `- 🟢 org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1:jar
                         """,
                 """
-                        org.l2x6.jrebuild.test-project:jrebuild-test-imported:0.0.1:jar
-                        `- org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1:jar
+                        🟢 org.l2x6.jrebuild.test-project:jrebuild-test-imported:0.0.1:jar
+                        `- 🟢 org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1:jar
                         """);
 
     }
@@ -57,16 +57,16 @@ public class DependencyCollectorTest {
                 "",
                 b -> b.includeParentsAndImports(false),
                 """
-                        org.l2x6.jrebuild.test-project:jrebuild-test-api:0.0.1:jar
+                        🟢 org.l2x6.jrebuild.test-project:jrebuild-test-api:0.0.1:jar
                         """,
                 """
-                        org.l2x6.jrebuild.test-project:jrebuild-test-impl:0.0.1:jar
-                        +- org.l2x6.jrebuild.test-project:jrebuild-test-api:0.0.1:jar
-                        `- org.l2x6.jrebuild.test-project:jrebuild-test-optional:0.0.1:jar
+                        🟢 org.l2x6.jrebuild.test-project:jrebuild-test-impl:0.0.1:jar
+                        +- 🟢 org.l2x6.jrebuild.test-project:jrebuild-test-api:0.0.1:jar
+                        `- 🟢 org.l2x6.jrebuild.test-project:jrebuild-test-optional:0.0.1:jar
                         """,
                 """
-                        org.l2x6.jrebuild.test-project:jrebuild-test-imported:0.0.1:jar
-                        `- org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1:jar
+                        🟢 org.l2x6.jrebuild.test-project:jrebuild-test-imported:0.0.1:jar
+                        `- 🟢 org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1:jar
                         """);
 
     }
@@ -79,16 +79,16 @@ public class DependencyCollectorTest {
                         .projectDirectory(Path.of("target/projects/test-project"))
                         .includeParentsAndImports(false),
                 """
-                        org.l2x6.jrebuild.test-project:jrebuild-test-api:0.0.1-SNAPSHOT:jar
+                        🟢 org.l2x6.jrebuild.test-project:jrebuild-test-api:0.0.1-SNAPSHOT:jar
                         """,
                 """
-                        org.l2x6.jrebuild.test-project:jrebuild-test-impl:0.0.1-SNAPSHOT:jar
-                        +- org.l2x6.jrebuild.test-project:jrebuild-test-api:0.0.1-SNAPSHOT:jar
-                        `- org.l2x6.jrebuild.test-project:jrebuild-test-optional:0.0.1-SNAPSHOT:jar
+                        🟢 org.l2x6.jrebuild.test-project:jrebuild-test-impl:0.0.1-SNAPSHOT:jar
+                        +- 🟢 org.l2x6.jrebuild.test-project:jrebuild-test-api:0.0.1-SNAPSHOT:jar
+                        `- 🟢 org.l2x6.jrebuild.test-project:jrebuild-test-optional:0.0.1-SNAPSHOT:jar
                         """,
                 """
-                        org.l2x6.jrebuild.test-project:jrebuild-test-imported:0.0.1-SNAPSHOT:jar
-                        `- org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1-SNAPSHOT:jar
+                        🟢 org.l2x6.jrebuild.test-project:jrebuild-test-imported:0.0.1-SNAPSHOT:jar
+                        `- 🟢 org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1-SNAPSHOT:jar
                         """);
 
     }
@@ -108,15 +108,15 @@ public class DependencyCollectorTest {
                     .collect(Collectors.toList());
             String[] expected = {
                     """
-                            org.l2x6.jrebuild.test-project:jrebuild-test-build-child:0.0.1:jar
-                            +- org.l2x6.jrebuild.test-project:jrebuild-test-build-parent:0.0.1:pom
-                            |  +- org.l2x6.jrebuild.test-project:jrebuild-test-project:0.0.1:pom
-                            |  `- org.l2x6.jrebuild.test-project:jrebuild-test-bom:0.0.1:pom
-                            |     +- org.l2x6.jrebuild.test-project:jrebuild-test-project:0.0.1:pom
-                            |     `- org.l2x6.jrebuild.test-project:jrebuild-test-imported-bom:0.0.1:pom
-                            |        `- org.l2x6.jrebuild.test-project:jrebuild-test-project:0.0.1:pom
-                            `- org.l2x6.jrebuild.test-project:jrebuild-test-api:0.0.1:jar
-                               `- org.l2x6.jrebuild.test-project:jrebuild-test-project:0.0.1:pom
+                            🟢 org.l2x6.jrebuild.test-project:jrebuild-test-build-child:0.0.1:jar
+                            +- 👴 org.l2x6.jrebuild.test-project:jrebuild-test-build-parent:0.0.1:pom
+                            |  +- 👴 org.l2x6.jrebuild.test-project:jrebuild-test-project:0.0.1:pom
+                            |  `- ⛴ org.l2x6.jrebuild.test-project:jrebuild-test-bom:0.0.1:pom
+                            |     +- 👴 org.l2x6.jrebuild.test-project:jrebuild-test-project:0.0.1:pom
+                            |     `- ⛴ org.l2x6.jrebuild.test-project:jrebuild-test-imported-bom:0.0.1:pom
+                            |        `- 👴 org.l2x6.jrebuild.test-project:jrebuild-test-project:0.0.1:pom
+                            `- 🟢 org.l2x6.jrebuild.test-project:jrebuild-test-api:0.0.1:jar
+                               `- 👴 org.l2x6.jrebuild.test-project:jrebuild-test-project:0.0.1:pom
                             """
             };
             Assertions.assertThat(trees).containsExactly(expected);
@@ -145,9 +145,9 @@ public class DependencyCollectorTest {
                     .collect(Collectors.toList());
             String[] expected = {
                     """
-                            org.l2x6.jrebuild.external:jrebuild-external-impl:2.0.0
-                            `- org.l2x6.jrebuild.external:jrebuild-external-intermediary:2.0.0:jar
-                               `- org.l2x6.jrebuild.external:jrebuild-external-api:2.0.0:jar
+                            🟢 org.l2x6.jrebuild.external:jrebuild-external-impl:2.0.0
+                            `- 🟢 org.l2x6.jrebuild.external:jrebuild-external-intermediary:2.0.0:jar
+                               `- 🟢 org.l2x6.jrebuild.external:jrebuild-external-api:2.0.0:jar
                             """
             };
             Assertions.assertThat(trees).containsExactly(expected);
@@ -186,7 +186,7 @@ public class DependencyCollectorTest {
                     .collect(Collectors.toList());
             String[] expected = {
                     """
-                            org.l2x6.jrebuild.external:jrebuild-external-non-existent-dependency-owner:2.0.0
+                            🟢 org.l2x6.jrebuild.external:jrebuild-external-non-existent-dependency-owner:2.0.0
                             """
             };
             Assertions.assertThat(trees).containsExactly(expected);
@@ -206,7 +206,7 @@ public class DependencyCollectorTest {
                     .collect(Collectors.toList());
             String[] expected = {
                     """
-                            org.l2x6.jrebuild.external:jrebuild-external-non-existent-dependency-owner:2.0.0
+                            🟢 org.l2x6.jrebuild.external:jrebuild-external-non-existent-dependency-owner:2.0.0
                             """
             };
             Assertions.assertThat(trees).containsExactly(expected);

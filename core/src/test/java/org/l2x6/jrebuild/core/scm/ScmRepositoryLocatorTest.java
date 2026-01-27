@@ -17,6 +17,7 @@ import org.assertj.core.api.Assertions;
 import org.jboss.logging.Logger;
 import org.junit.jupiter.api.Test;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup.MutableRemoteScmLookup;
+import org.l2x6.jrebuild.api.scm.ScmRepository;
 import org.l2x6.jrebuild.core.dep.DependencyCollector;
 import org.l2x6.jrebuild.core.dep.DependencyCollectorRequest;
 import org.l2x6.jrebuild.core.dep.DependencyCollectorRequest.Builder;
@@ -45,7 +46,9 @@ public class ScmRepositoryLocatorTest {
             DependencyCollectorRequest re = builder.build();
             final ScmRepositoryService locator = ScmRepositoryService.create(
                     context.lookup().lookup(CachingMavenModelReader.class).get()::readEffectiveModel,
-                    new MutableRemoteScmLookup().put("https://github.com/l2x6/jrebuild-test", Map.of("0.0.1", "deadbeef")),
+                    new MutableRemoteScmLookup("git").put(
+                            new ScmRepository("♢", "git", "https://github.com/l2x6/jrebuild-test"),
+                            Map.of("0.0.1", "deadbeef")),
                     gitRepoCloneDir,
                     Collections.emptyList(),
                     Collections.emptyList());
@@ -59,8 +62,8 @@ public class ScmRepositoryLocatorTest {
                     .collect(Collectors.toList());
             Assertions.assertThat(trees).containsExactly(
                     """
-                            ✅ ♢ https://github.com/l2x6/jrebuild-test#0.0.1@deadbeef [org.l2x6.jrebuild.test-project:*:0.0.1]
-                            `- ❌ ♢ https://github.com/l2x6/jrebuild-test-transitive#unknown-for-version-0.0.1@null [org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1:jar]
+                            ✅ ♢ git:https://github.com/l2x6/jrebuild-test#0.0.1@deadbeef [org.l2x6.jrebuild.test-project:*:0.0.1]
+                            `- ❌ ♢ git:https://github.com/l2x6/jrebuild-test-transitive#unknown-for-version-0.0.1@null [org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1:jar]
                             """);
         }
     }

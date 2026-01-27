@@ -6,10 +6,10 @@ package org.l2x6.jrebuild.api.scm;
 
 import org.l2x6.pom.tuner.model.Gav;
 
-public record FqScmRef(ScmRef scmRef, ScmRepository repository, String sourceOfInfo) {
+public record FqScmRef(ScmRef scmRef, ScmRepository repository) {
 
     public static FqScmRef createUnknown(Gav gav) {
-        return new FqScmRef(ScmRef.createUnknown(gav.getVersion()), ScmRepository.createUnknown(gav), null);
+        return new FqScmRef(ScmRef.createUnknown(gav.getVersion()), ScmRepository.createUnknown(gav));
     }
 
     public boolean isUnknown() {
@@ -18,7 +18,7 @@ public record FqScmRef(ScmRef scmRef, ScmRepository repository, String sourceOfI
 
     @Override
     public String toString() {
-        return (sourceOfInfo == null ? "" : (sourceOfInfo + " ")) + repository + "#" + scmRef;
+        return repository + "#" + scmRef;
     }
 
 }

@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 import org.jboss.logging.Logger;
@@ -63,13 +64,12 @@ public class RecipeGroupManager {
         this.repositories = repositories;
     }
 
-    public RecipeFile lookupScmInformation(Gav gav) {
-        return repositories.stream()
+    public List<RecipeFile> lookupScmInformation(Gav gav) {
+        return Collections.unmodifiableList(repositories.stream()
                 .map(repo -> repo.lookup(gav))
                 .filter(r -> r != null)
                 .sorted()
-                .findFirst()
-                .orElse(null);
+                .toList());
     }
 
     public static String normalizeScmUri(String scmUri) {

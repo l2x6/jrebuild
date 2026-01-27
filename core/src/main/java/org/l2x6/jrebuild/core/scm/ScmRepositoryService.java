@@ -8,9 +8,11 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -18,6 +20,7 @@ import org.apache.maven.model.Model;
 import org.l2x6.jrebuild.api.scm.FqScmRef;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
 import org.l2x6.jrebuild.api.scm.ScmLocator;
+import org.l2x6.jrebuild.common.JrebuildCommonUtils;
 import org.l2x6.jrebuild.core.build.BuildGroup;
 import org.l2x6.jrebuild.core.dep.ResolvedArtifactNode;
 import org.l2x6.jrebuild.core.tree.Node;
@@ -69,8 +72,8 @@ public class ScmRepositoryService implements ScmLocator {
 
     public class ScmRepositoryLocatorVisitor implements Visitor<ResolvedArtifactNode, ScmRepositoryLocatorVisitor> {
 
-        private final Deque<ScmInfoNode> stack = new ArrayDeque<>();
-        private ScmInfoNode rootNode;
+        private final Deque<ScmInfoNode.Builder> stack = new ArrayDeque<>();
+        private ScmInfoNode.Builder rootNode;
 
         @Override
         public boolean enter(ResolvedArtifactNode node) {
@@ -78,15 +81,15 @@ public class ScmRepositoryService implements ScmLocator {
             Gav gav = gavtc.toGav();
             FqScmRef scmRef = locate(gav);
             if (stack.isEmpty()) {
-                ScmInfoNode newNode = new ScmInfoNode(BuildGroup.mutable(scmRef, gavtc));
+                ScmInfoNode.Builder newNode = ScmInfoNode.builder(BuildGroup.builder(scmRef).artifact(gavtc));
                 stack.push(newNode);
             } else {
-                ScmInfoNode parent = stack.peek();
+                ScmInfoNode.Builder parent = stack.peek();
                 if (parent.buildGroup.scmRef().equals(scmRef)) {
-                    parent.buildGroup.artifacts().add(gavtc);
+                    parent.buildGroup.artifact(gavtc);
                     parent.depth.incrementAndGet();
                 } else {
-                    ScmInfoNode newNode = new ScmInfoNode(BuildGroup.mutable(scmRef, gavtc));
+                    ScmInfoNode.Builder newNode = ScmInfoNode.builder(BuildGroup.builder(scmRef).artifact(gavtc));
                     parent.children.add(newNode);
                     stack.push(newNode);
                 }
@@ -96,7 +99,7 @@ public class ScmRepositoryService implements ScmLocator {
 
         @Override
         public boolean leave(ResolvedArtifactNode node) {
-            ScmInfoNode rn = stack.peek();
+            ScmInfoNode.Builder rn = stack.peek();
             if (rn.depth.getAndDecrement() == 0) {
                 stack.pop();
             }
@@ -107,21 +110,37 @@ public class ScmRepositoryService implements ScmLocator {
         }
 
         public ScmInfoNode rootNode() {
-            return rootNode;
+            return rootNode.build();
         }
     }
 
-    public static record ScmInfoNode(
-            BuildGroup buildGroup,
-            List<ScmInfoNode> children,
-            AtomicInteger depth) implements Node<ScmInfoNode> {
-        public ScmInfoNode(BuildGroup gavScmInfo) {
-            this(gavScmInfo, new ArrayList<>(), new AtomicInteger(0));
+    public static class ScmInfoNode implements Node<ScmInfoNode> {
+        private final BuildGroup buildGroup;
+        private final List<ScmInfoNode> children;
+        private final int hashCode;
+
+        private ScmInfoNode(BuildGroup buildGroup, List<ScmInfoNode> children) {
+            super();
+            this.buildGroup = Objects.requireNonNull(buildGroup).assertImmutable();
+            this.children = JrebuildCommonUtils.assertImmutable(Objects.requireNonNull(children));
+            this.hashCode = 31 * buildGroup.hashCode() + children.hashCode();
+        }
+
+        public static Builder builder(BuildGroup.Builder gavScmInfo) {
+            return new Builder(gavScmInfo);
+        }
+
+        public BuildGroup buildGroup() {
+            return buildGroup;
+        }
+
+        public List<ScmInfoNode> children() {
+            return children;
         }
 
         @Override
         public int hashCode() {
-            return buildGroup.hashCode();
+            return hashCode;
         }
 
         @Override
@@ -132,7 +151,8 @@ public class ScmRepositoryService implements ScmLocator {
                 return false;
             if (getClass() != obj.getClass())
                 return false;
-            return buildGroup.equals(((ScmInfoNode) obj).buildGroup);
+            ScmInfoNode other = (ScmInfoNode) obj;
+            return buildGroup.equals(other.buildGroup) && children.equals(other.children);
         }
 
         @Override
@@ -140,6 +160,42 @@ public class ScmRepositoryService implements ScmLocator {
             return buildGroup.toString();
         }
 
+        public static class Builder {
+            private final BuildGroup.Builder buildGroup;
+            private List<Builder> children = new ArrayList<>();
+            private final AtomicInteger depth = new AtomicInteger(0);
+
+            public Builder(BuildGroup.Builder buildGroup) {
+                this.buildGroup = Objects.requireNonNull(buildGroup);
+            }
+
+            public ScmInfoNode build() {
+                return new ScmInfoNode(
+                        buildGroup.build(),
+                        Collections.unmodifiableList(
+                                children.stream()
+                                        .map(Builder::build)
+                                        .toList()));
+            }
+
+            @Override
+            public int hashCode() {
+                return buildGroup.hashCode();
+            }
+
+            @Override
+            public boolean equals(Object obj) {
+                if (this == obj)
+                    return true;
+                if (obj == null)
+                    return false;
+                if (getClass() != obj.getClass())
+                    return false;
+                Builder other = (Builder) obj;
+                return this.buildGroup.equals(other.buildGroup);
+            }
+
+        }
     }
 
     static class TerminalScmLocator implements ScmLocator {

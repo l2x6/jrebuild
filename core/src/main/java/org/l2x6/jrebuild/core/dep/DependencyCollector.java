@@ -11,7 +11,6 @@ import io.smallrye.mutiny.infrastructure.Infrastructure;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
 import java.util.function.Consumer;
@@ -35,6 +34,7 @@ import org.eclipse.aether.util.graph.selector.AndDependencySelector;
 import org.eclipse.aether.util.graph.selector.ExclusionDependencySelector;
 import org.eclipse.aether.util.graph.selector.ScopeDependencySelector;
 import org.jboss.logging.Logger;
+import org.l2x6.jrebuild.core.dep.ResolvedArtifactNode.DependencyAxis;
 import org.l2x6.jrebuild.core.mima.internal.CachingMavenModelReader;
 import org.l2x6.jrebuild.core.mima.internal.CachingMavenModelReader.ModelData;
 import org.l2x6.pom.tuner.model.Gav;
@@ -174,7 +174,7 @@ public class DependencyCollector {
             this.modelReader = modelReader;
         }
 
-        public void accept(Artifact a, Consumer<ResolvedArtifactNode> result) {
+        public void accept(Artifact a, Consumer<ResolvedArtifactNode.Builder> result) {
 
             try {
                 ModelData resp = modelReader.readModel(a);
@@ -183,10 +183,11 @@ public class DependencyCollector {
                 /* Predecessors axis */
                 if (resp.parent() != null) {
                     /* Ignore the super pom */
-                    Gavtc gav = resp.parent().toGavtc("pom", null);
-                    List<ResolvedArtifactNode> children = new ArrayList<>();
-                    traverse(resp.parent(), resp.repositories(), children::add);
-                    result.accept(new ResolvedArtifactNode(gav, Collections.unmodifiableList(children), resp.repositories()));
+                    final Gavtc gav = resp.parent().toGavtc("pom", null);
+                    ResolvedArtifactNode.Builder builder = new ResolvedArtifactNode.Builder(DependencyAxis.PARENT, gav,
+                            resp.repositories());
+                    traverse(resp.parent(), resp.repositories(), builder::child);
+                    result.accept(builder);
                 }
 
                 /* Imports axis */
@@ -203,27 +204,28 @@ public class DependencyCollector {
             stack.pop();
         }
 
-        void traverseImports(Model interpolatedModel, List<RemoteRepository> repos, Consumer<ResolvedArtifactNode> result) {
+        void traverseImports(Model interpolatedModel, List<RemoteRepository> repos,
+                Consumer<ResolvedArtifactNode.Builder> result) {
             final DependencyManagement dm = interpolatedModel.getDependencyManagement();
             final List<Dependency> deps;
             if (dm != null && (deps = dm.getDependencies()) != null && !deps.isEmpty()) {
                 for (Dependency dep : deps) {
                     if ("import".equals(dep.getScope())) {
                         Gavtc gav = new Gavtc(dep.getGroupId(), dep.getArtifactId(), dep.getVersion(), dep.getType(), null);
+                        ResolvedArtifactNode.Builder builder = new ResolvedArtifactNode.Builder(DependencyAxis.IMPORT, gav,
+                                repos);
                         if (!"pom".equals(dep.getType())) {
                             throw new IllegalStateException("Unexpected dependency management import type '" + dep.getType()
                                     + "' of " + gav + " in " + interpolatedModel.getId());
                         }
-                        List<ResolvedArtifactNode> children = new ArrayList<>();
-                        traverse(gav.toGav(), repos, children::add);
-                        result.accept(
-                                new ResolvedArtifactNode(gav, Collections.unmodifiableList(children), repos));
+                        traverse(gav.toGav(), repos, builder::child);
+                        result.accept(builder);
                     }
                 }
             }
         }
 
-        void traverse(Gav a, List<RemoteRepository> repos, Consumer<ResolvedArtifactNode> result) {
+        void traverse(Gav a, List<RemoteRepository> repos, Consumer<ResolvedArtifactNode.Builder> result) {
             stack.push(new StackEntry(a, repos));
             ModelData resp = modelReader.readModel(a);
 
@@ -231,9 +233,9 @@ public class DependencyCollector {
             if (resp.parent() != null) {
                 /* Ignore the super pom */
                 Gavtc gav = resp.parent().toGavtc("pom", null);
-                List<ResolvedArtifactNode> children = new ArrayList<>();
-                traverse(resp.parent(), repos, children::add);
-                result.accept(new ResolvedArtifactNode(gav, Collections.unmodifiableList(children), repos));
+                ResolvedArtifactNode.Builder builder = new ResolvedArtifactNode.Builder(DependencyAxis.PARENT, gav, repos);
+                traverse(resp.parent(), repos, builder::child);
+                result.accept(builder);
             }
 
             /* Imports axis */
@@ -262,7 +264,7 @@ public class DependencyCollector {
 
     static class ResolvedArtifactNodeVisitor implements DependencyVisitor {
 
-        private final Deque<ResolvedArtifactNode> stack = new ArrayDeque<>();
+        private final Deque<ResolvedArtifactNode.Builder> stack = new ArrayDeque<>();
         private ResolvedArtifactNode rootNode;
         private final CachingMavenModelReader modelReader;
         private final ParentsAndImportsResolver parentsAndImportsResolver;
@@ -278,25 +280,25 @@ public class DependencyCollector {
         public boolean visitEnter(DependencyNode node) {
             final Artifact artifact = node.getArtifact();
             final Gavtc gavtc = JrebuildUtils.toGavtc(artifact);
-            final ArrayList<ResolvedArtifactNode> children = new ArrayList<>();
-            final List<RemoteRepository> repositories = Collections.unmodifiableList(new ArrayList<>(node.getRepositories()));
+            final List<RemoteRepository> repositories = List.copyOf(node.getRepositories());
             modelReader.register(gavtc.toGav(), repositories);
-            final ResolvedArtifactNode newNode = new ResolvedArtifactNode(gavtc, children, repositories);
-            final ResolvedArtifactNode parent = stack.peek();
+            final ResolvedArtifactNode.Builder newNode = new ResolvedArtifactNode.Builder(DependencyAxis.DEPENDENCY, gavtc,
+                    repositories);
+            final ResolvedArtifactNode.Builder parent = stack.peek();
             if (parent != null) {
-                parent.children().add(newNode);
+                parent.child(newNode);
             }
             stack.push(newNode);
             if (parentsAndImportsResolver != null) {
                 try {
-                    parentsAndImportsResolver.accept(artifact, children::add);
+                    parentsAndImportsResolver.accept(artifact, newNode::child);
                 } catch (Exception e) {
                     StringBuilder sb = new StringBuilder("Could not resolve parents and imports of ")
                             .append(gavtc)
                             .append(" in thread ")
                             .append(Thread.currentThread().getName())
                             .append("; dependency stack:");
-                    for (ResolvedArtifactNode se : stack) {
+                    for (ResolvedArtifactNode.Builder se : stack) {
                         se.append(sb);
                     }
                     throw new RuntimeException(sb.toString(), e);
@@ -307,10 +309,9 @@ public class DependencyCollector {
 
         @Override
         public boolean visitLeave(DependencyNode node) {
-            ResolvedArtifactNode rn = stack.pop();
-            rn.makeImmutable();
+            ResolvedArtifactNode.Builder rn = stack.pop();
             if (stack.isEmpty()) {
-                this.rootNode = rn;
+                this.rootNode = rn.build();
             }
             return true;
         }

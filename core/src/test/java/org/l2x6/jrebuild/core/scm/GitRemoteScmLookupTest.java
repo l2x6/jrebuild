@@ -15,11 +15,13 @@ import java.util.UUID;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.l2x6.jrebuild.api.scm.ScmRef.Kind;
+import org.l2x6.jrebuild.api.scm.ScmRepository;
 import org.l2x6.jrebuild.core.scm.GitRemoteScmLookup.UrlEntry;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class GitRemoteScmLookupTest {
+    private static final String SOURCE = "T";
 
     @Test
     void loadStore() {
@@ -28,34 +30,34 @@ public class GitRemoteScmLookupTest {
         assertThat(file).doesNotExist();
 
         {
-            final Map<String, UrlEntry> map = GitRemoteScmLookup.load(file);
+            final Map<ScmRepository, UrlEntry> map = GitRemoteScmLookup.load(file);
             assertThat(map).isEmpty();
         }
 
         /* store some non-empty items */
         final Instant outdatedRetrievalTime = minRetrievalTime.minus(2, ChronoUnit.SECONDS);
         final Instant futureRetrievalTime = minRetrievalTime.plus(2, ChronoUnit.SECONDS);
-        GitRemoteScmLookup.store(file, new UrlEntry("empty", futureRetrievalTime, Collections.emptyMap()));
+        GitRemoteScmLookup.store(file, new UrlEntry(scmRepo("empty"), futureRetrievalTime, Collections.emptyMap()));
         final Map<String, String> fooMap = Map.of("k1", "v1", "k2", "v2");
-        GitRemoteScmLookup.store(file, new UrlEntry("foo", futureRetrievalTime, fooMap));
+        GitRemoteScmLookup.store(file, new UrlEntry(scmRepo("foo"), futureRetrievalTime, fooMap));
         final Map<String, String> fooBarMap = Map.of("fb1", "fbv1", "fb2", "fbv2");
-        GitRemoteScmLookup.store(file, new UrlEntry("bar", minRetrievalTime, fooBarMap));
+        GitRemoteScmLookup.store(file, new UrlEntry(scmRepo("bar"), minRetrievalTime, fooBarMap));
 
         final Map<String, String> outdatedMap = Map.of("old", "outdated");
-        GitRemoteScmLookup.store(file, new UrlEntry("outdated", outdatedRetrievalTime, outdatedMap));
+        GitRemoteScmLookup.store(file, new UrlEntry(scmRepo("outdated"), outdatedRetrievalTime, outdatedMap));
 
         Runnable check = () -> {
-            final Map<String, UrlEntry> map = GitRemoteScmLookup.load(file);
+            final Map<ScmRepository, UrlEntry> map = GitRemoteScmLookup.load(file);
             assertThat(map).hasSize(4);
-            assertThat(map.get("empty").refs()).isEmpty();
-            assertThat(map.get("empty").retrievalTime()).isEqualTo(futureRetrievalTime);
-            assertThat(map.get("foo").refs()).isEqualTo(fooMap);
-            assertThat(map.get("foo").retrievalTime()).isEqualTo(futureRetrievalTime);
-            assertThat(map.get("bar").refs()).isEqualTo(fooBarMap);
-            assertThat(map.get("bar").retrievalTime()).isEqualTo(minRetrievalTime);
+            assertThat(map.get(scmRepo("empty")).refs()).isEmpty();
+            assertThat(map.get(scmRepo("empty")).retrievalTime()).isEqualTo(futureRetrievalTime);
+            assertThat(map.get(scmRepo("foo")).refs()).isEqualTo(fooMap);
+            assertThat(map.get(scmRepo("foo")).retrievalTime()).isEqualTo(futureRetrievalTime);
+            assertThat(map.get(scmRepo("bar")).refs()).isEqualTo(fooBarMap);
+            assertThat(map.get(scmRepo("bar")).retrievalTime()).isEqualTo(minRetrievalTime);
 
-            assertThat(map.get("outdated").refs()).isEqualTo(outdatedMap);
-            assertThat(map.get("outdated").retrievalTime()).isEqualTo(outdatedRetrievalTime);
+            assertThat(map.get(scmRepo("outdated")).refs()).isEqualTo(outdatedMap);
+            assertThat(map.get(scmRepo("outdated")).retrievalTime()).isEqualTo(outdatedRetrievalTime);
         };
         check.run();
 
@@ -82,12 +84,12 @@ public class GitRemoteScmLookupTest {
                 remoteScm = new GitRemoteScmLookup(file, minRetrievalTime) {
 
                     @Override
-                    UrlEntry lsRemote(String url) {
+                    UrlEntry lsRemote(ScmRepository url) {
                         return new UrlEntry(url, futureRetrievalTime, updatedMap);
                     }
 
                 };
-                Map<String, String> refs = remoteScm.getRefs("outdated", Kind.TAG);
+                Map<String, String> refs = remoteScm.getRefs(scmRepo("outdated"), Kind.TAG);
                 Assertions.assertThat(refs).isEqualTo(updatedMap);
             } finally {
                 if (remoteScm != null) {
@@ -97,18 +99,21 @@ public class GitRemoteScmLookupTest {
             while (remoteScm.runner.getState() != State.TERMINATED) {
                 /* await termination */
             }
-            final Map<String, UrlEntry> map = GitRemoteScmLookup.load(file);
+            final Map<ScmRepository, UrlEntry> map = GitRemoteScmLookup.load(file);
             assertThat(map).hasSize(4);
-            assertThat(map.get("empty").refs()).isEmpty();
-            assertThat(map.get("empty").retrievalTime()).isEqualTo(futureRetrievalTime);
-            assertThat(map.get("foo").refs()).isEqualTo(fooMap);
-            assertThat(map.get("foo").retrievalTime()).isEqualTo(futureRetrievalTime);
-            assertThat(map.get("bar").refs()).isEqualTo(fooBarMap);
-            assertThat(map.get("bar").retrievalTime()).isEqualTo(minRetrievalTime);
+            assertThat(map.get(scmRepo("empty")).refs()).isEmpty();
+            assertThat(map.get(scmRepo("empty")).retrievalTime()).isEqualTo(futureRetrievalTime);
+            assertThat(map.get(scmRepo("foo")).refs()).isEqualTo(fooMap);
+            assertThat(map.get(scmRepo("foo")).retrievalTime()).isEqualTo(futureRetrievalTime);
+            assertThat(map.get(scmRepo("bar")).refs()).isEqualTo(fooBarMap);
+            assertThat(map.get(scmRepo("bar")).retrievalTime()).isEqualTo(minRetrievalTime);
 
-            assertThat(map.get("outdated").refs()).isEqualTo(updatedMap);
-            assertThat(map.get("outdated").retrievalTime()).isEqualTo(futureRetrievalTime);
+            assertThat(map.get(scmRepo("outdated")).refs()).isEqualTo(updatedMap);
+            assertThat(map.get(scmRepo("outdated")).retrievalTime()).isEqualTo(futureRetrievalTime);
         }
     }
 
+    static ScmRepository scmRepo(String uri) {
+        return new ScmRepository(SOURCE, "git", uri);
+    }
 }

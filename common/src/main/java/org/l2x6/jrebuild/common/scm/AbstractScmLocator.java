@@ -10,6 +10,7 @@ import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
 import org.l2x6.jrebuild.api.scm.ScmLocator;
 import org.l2x6.jrebuild.api.scm.ScmRef;
 import org.l2x6.jrebuild.api.scm.ScmRef.Kind;
+import org.l2x6.jrebuild.api.scm.ScmRepository;
 import org.l2x6.pom.tuner.model.Gav;
 
 public abstract class AbstractScmLocator implements ScmLocator {
@@ -23,8 +24,7 @@ public abstract class AbstractScmLocator implements ScmLocator {
         this.scmLookup = scmLookup;
     }
 
-    protected ScmRef guessTag(Gav gav, String url) {
-        final Map<String, String> tags = scmLookup.getRefs(url, Kind.TAG);
+    protected ScmRef guessTag(Gav gav, Map<String, String> tags) {
         final String version = gav.getVersion();
         String tag = version;
         String revision = tags.get(tag);
@@ -53,10 +53,17 @@ public abstract class AbstractScmLocator implements ScmLocator {
         if (revision != null) {
             return new ScmRef(Kind.TAG, tag, revision);
         }
+
+        // seen in commons-beanutils
+        tag = "rel/" + gav.getArtifactId() + "-" + version;
+        revision = tags.get(tag);
+        if (revision != null) {
+            return new ScmRef(Kind.TAG, tag, revision);
+        }
         return null;
     }
 
-    protected ScmRef validateTag(String url, String tag, String version) {
+    protected ScmRef validateTag(ScmRepository url, String tag, String version) {
         final Kind kind = Kind.TAG;
         final String revision = scmLookup.getRevision(url, kind, tag);
         if (revision != null) {

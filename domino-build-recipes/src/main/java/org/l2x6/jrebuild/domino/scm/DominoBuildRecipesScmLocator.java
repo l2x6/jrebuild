@@ -32,6 +32,8 @@ import org.l2x6.jrebuild.domino.scm.recipes.scm.TagMapping;
 import org.l2x6.pom.tuner.model.Gav;
 
 public class DominoBuildRecipesScmLocator extends AbstractScmLocator {
+    static final String SOURCE = "🁻";
+
     private static final Logger log = Logger.getLogger(DominoBuildRecipesScmLocator.class);
 
     private static final Pattern NUMERIC_PART = Pattern.compile("(\\d+)(\\.\\d+)+");
@@ -46,34 +48,37 @@ public class DominoBuildRecipesScmLocator extends AbstractScmLocator {
 
     public FqScmRef locate(Gav gav) {
 
-        final RecipeFile recipe = recipeGroupManager.lookupScmInformation(gav);
-        if (recipe == null) {
+        final List<RecipeFile> recipes = recipeGroupManager.lookupScmInformation(gav);
+        if (recipes.isEmpty()) {
             return null;
         }
         //log.tracef("Found recipe for %s: %s", toBuild, recipe);
         final List<RepositoryInfo> repos = new ArrayList<>();
         final List<TagMapping> allMappings = new ArrayList<>();
-        ScmInfo main;
-        try {
-            main = BuildRecipe.SCM.getHandler().parse(recipe.recipeFile());
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to parse " + recipe, e);
-        }
-        repos.add(main);
-        allMappings.addAll(main.getTagMapping());
-        for (RepositoryInfo j : main.getLegacyRepos()) {
-            repos.add(j);
-            allMappings.addAll(j.getTagMapping());
+
+        for (RecipeFile recipe : recipes) {
+            ScmInfo main;
+            try {
+                main = BuildRecipe.SCM.getHandler().parse(recipe.recipeFile());
+                log.tracef("Loaded %s info from %s", SOURCE, recipe.recipeFile());
+            } catch (IOException e) {
+                throw new UncheckedIOException("Failed to parse " + recipe, e);
+            }
+            repos.add(main);
+            allMappings.addAll(main.getTagMapping());
+            for (RepositoryInfo j : main.getLegacyRepos()) {
+                repos.add(j);
+                allMappings.addAll(j.getTagMapping());
+            }
         }
 
         for (RepositoryInfo parsedInfo : repos) {
-            //log.tracef("Looking for a tag in %s", parsedInfo.getUri());
+            final ScmRepository uri = new ScmRepository(SOURCE, "git", parsedInfo.getUriWithoutFragment());
+            log.tracef("Mapping %s to a tag in %s with %d mappings", gav, uri, allMappings.size());
 
-            final String uri = parsedInfo.getUriWithoutFragment();
             final Map<String, String> tagsToHash = scmLookup.getRefs(uri, Kind.TAG);
 
             final String version = gav.getVersion();
-
             for (TagMapping mapping : allMappings) {
                 Matcher m = Pattern.compile(mapping.getPattern()).matcher(version);
                 if (m.matches()) {
@@ -84,19 +89,19 @@ public class DominoBuildRecipesScmLocator extends AbstractScmLocator {
                     }
                     final String sha = tagsToHash.get(tagTemplate);
                     if (sha != null) {
-                        return new FqScmRef(new ScmRef(Kind.TAG, tagTemplate, sha), new ScmRepository("git", uri), "🁻");
+                        return new FqScmRef(new ScmRef(Kind.TAG, tagTemplate, sha), uri);
                     }
                     if (isSha1(tagTemplate)) {
                         return new FqScmRef(new ScmRef(Kind.REVISION_ID, tagTemplate, tagTemplate),
-                                new ScmRepository("git", uri), "🁻");
+                                uri);
                     }
                 } else {
                     log.tracef("%s: pattern %s does not match version %s", gav, mapping.getPattern(), version);
                 }
-                ScmRef ref = guessTag(gav, uri);
-                if (ref != null) {
-                    return new FqScmRef(ref, new ScmRepository("git", uri), "🁻");
-                }
+            }
+            ScmRef ref = guessTag(gav, tagsToHash);
+            if (ref != null) {
+                return new FqScmRef(ref, uri);
             }
         }
         return null;

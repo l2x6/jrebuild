@@ -4,21 +4,27 @@
  */
 package org.l2x6.jrebuild.core.scm;
 
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.apache.maven.model.Model;
 import org.apache.maven.model.Scm;
 import org.l2x6.jrebuild.api.scm.FqScmRef;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
 import org.l2x6.jrebuild.api.scm.ScmRef;
+import org.l2x6.jrebuild.api.scm.ScmRef.Kind;
 import org.l2x6.jrebuild.api.scm.ScmRepository;
 import org.l2x6.jrebuild.common.scm.AbstractScmLocator;
 import org.l2x6.pom.tuner.model.Gav;
 
 public class PomScmLocator extends AbstractScmLocator {
+    private static final String SOURCE = "♢";
     private static final String HTTPS_GITHUB_COM = "https://github.com/";
+    private static final Pattern SCM_TYPE_PATTERN = Pattern.compile("^scm\\:([^\\|\\:]+)[\\|\\:](.*)$");
     private final Function<Gav, Model> getEffectiveModel;
 
     public PomScmLocator(Function<Gav, Model> getEffectiveModel, RemoteScmLookup scmLookup) {
@@ -49,18 +55,23 @@ public class PomScmLocator extends AbstractScmLocator {
     }
 
     private FqScmRef toScmRef(Gav gav, final Scm scm, String url) {
-        return of(gav, scm.getTag(), new ScmRepository("git", normalizeScmUri(url)));
+        Matcher m = SCM_TYPE_PATTERN.matcher(url);
+        if (m.matches()) {
+            return of(gav, scm.getTag(), new ScmRepository(SOURCE, m.group(1), normalizeScmUri(m.group(2))));
+        }
+        return of(gav, scm.getTag(), new ScmRepository(SOURCE, "git", normalizeScmUri(url)));
     }
 
     public FqScmRef of(Gav gav, String tag, ScmRepository repository) {
         Objects.requireNonNull(repository, "repository cannot be null");
         if (tag == null || "HEAD".equals(tag)) {
-            final ScmRef ref = guessTag(gav, repository.uri());
-            return new FqScmRef(ref != null ? ref : ScmRef.createUnknown(gav.getVersion()), repository, "♢");
+            final Map<String, String> tagsToHash = scmLookup.getRefs(repository, Kind.TAG);
+            final ScmRef ref = guessTag(gav, tagsToHash);
+            return new FqScmRef(ref != null ? ref : ScmRef.createUnknown(gav.getVersion()), repository);
         }
         try {
-            final ScmRef ref = validateTag(repository.uri(), tag, gav.getVersion());
-            return new FqScmRef(ref, repository, "♢");
+            final ScmRef ref = validateTag(repository, tag, gav.getVersion());
+            return new FqScmRef(ref, repository);
         } catch (Exception e) {
             throw new RuntimeException("Invalid SCM info in pom of " + gav, e);
         }

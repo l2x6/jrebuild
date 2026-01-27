@@ -4,22 +4,31 @@
  */
 package org.l2x6.jrebuild.core.dep;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import org.eclipse.aether.repository.RemoteRepository;
+import org.l2x6.jrebuild.common.JrebuildCommonUtils;
+import org.l2x6.jrebuild.core.scm.ScmRepositoryService.ScmInfoNode.Builder;
 import org.l2x6.jrebuild.core.tree.Node;
 import org.l2x6.pom.tuner.model.Gavtc;
 
 public class ResolvedArtifactNode implements Comparable<ResolvedArtifactNode>, Node<ResolvedArtifactNode> {
+    private final DependencyAxis axis;
     private final Gavtc gavtc;
     private List<ResolvedArtifactNode> children;
     private final List<RemoteRepository> repositories;
+    private final int hashCode;
 
-    ResolvedArtifactNode(Gavtc rootGavtc, List<ResolvedArtifactNode> children, List<RemoteRepository> repositories) {
+    private ResolvedArtifactNode(DependencyAxis axis, Gavtc rootGavtc, List<ResolvedArtifactNode> children,
+            List<RemoteRepository> repositories) {
         super();
+        this.axis = axis;
         this.gavtc = rootGavtc;
-        this.children = children;
-        this.repositories = repositories;
+        this.children = JrebuildCommonUtils.assertImmutable(children);
+        this.repositories = JrebuildCommonUtils.assertImmutable(repositories);
+        this.hashCode = 31 * (31 * gavtc.hashCode() + children.hashCode()) + repositories.hashCode();
     }
 
     public Gavtc gavtc() {
@@ -41,12 +50,12 @@ public class ResolvedArtifactNode implements Comparable<ResolvedArtifactNode>, N
     }
 
     public String toString() {
-        return gavtc.toString();
+        return axis + " " + gavtc.toString();
     }
 
     @Override
     public int hashCode() {
-        return gavtc.hashCode();
+        return hashCode;
     }
 
     @Override
@@ -58,15 +67,15 @@ public class ResolvedArtifactNode implements Comparable<ResolvedArtifactNode>, N
         if (getClass() != obj.getClass())
             return false;
         ResolvedArtifactNode other = (ResolvedArtifactNode) obj;
-        return gavtc.equals(other.gavtc);
-    }
-
-    void makeImmutable() {
-        this.children = Collections.unmodifiableList(children);
+        return gavtc.equals(other.gavtc) && children.equals(other.children) && repositories.equals(other.repositories);
     }
 
     StringBuilder append(StringBuilder sb) {
-        sb.append("\n    -> ").append(gavtc);
+        return append(sb, axis, gavtc, repositories);
+    }
+
+    static StringBuilder append(StringBuilder sb, DependencyAxis axis, Gavtc gavtc, List<RemoteRepository> repositories) {
+        sb.append("\n    -> ").append(axis).append(gavtc);
         for (RemoteRepository repo : repositories) {
             final String url = repo.getUrl();
             sb.append("\n        ").append(url);
@@ -80,4 +89,73 @@ public class ResolvedArtifactNode implements Comparable<ResolvedArtifactNode>, N
         }
         return sb;
     }
+
+    public static enum DependencyAxis {
+        DEPENDENCY("🟢"),
+        IMPORT("⛴"),
+        PARENT("👴");
+
+        private final String symbol;
+
+        private DependencyAxis(String symbol) {
+            this.symbol = symbol;
+        }
+
+        public String toString() {
+            return symbol;
+        }
+    }
+
+    public static class Builder {
+        private final DependencyAxis axis;
+        private final Gavtc gavtc;
+        private final List<Builder> children = new ArrayList<>();
+        private final List<RemoteRepository> repositories;
+
+        public Builder(DependencyAxis axis, Gavtc gavtc, List<RemoteRepository> repositories) {
+            super();
+            this.axis = axis;
+            this.gavtc = Objects.requireNonNull(gavtc);
+            this.repositories = JrebuildCommonUtils.assertImmutable(Objects.requireNonNull(repositories));
+        }
+
+        public Builder child(Builder child) {
+            children.add(child);
+            return this;
+        }
+
+        @Override
+        public int hashCode() {
+            return gavtc.hashCode();
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj)
+                return true;
+            if (obj == null)
+                return false;
+            if (getClass() != obj.getClass())
+                return false;
+            Builder other = (Builder) obj;
+            return gavtc.equals(other.gavtc);
+        }
+
+        public ResolvedArtifactNode build() {
+            return new ResolvedArtifactNode(
+                    axis,
+                    gavtc,
+                    Collections.unmodifiableList(
+                            children.stream()
+                                    .map(Builder::build)
+                                    .toList()),
+                    repositories);
+        }
+
+        StringBuilder append(StringBuilder sb) {
+            return ResolvedArtifactNode.append(sb, axis, gavtc, repositories);
+        }
+
+    }
+
 }

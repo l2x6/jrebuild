@@ -26,6 +26,7 @@ import org.l2x6.jrebuild.api.scm.FqScmRef;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup.MutableRemoteScmLookup;
 import org.l2x6.jrebuild.api.scm.ScmRef.Kind;
+import org.l2x6.jrebuild.api.scm.ScmRepository;
 import org.l2x6.jrebuild.common.git.GitUtils;
 import org.l2x6.pom.tuner.model.Gav;
 
@@ -71,12 +72,13 @@ class DominoBuildRecipesScmLocatorTest {
 
     }
 
-    static final RemoteScmLookup scmLookup = new MutableRemoteScmLookup().put("https://github.com/apache/commons-lang.git",
+    static final RemoteScmLookup scmLookup = new MutableRemoteScmLookup("git").put(
+            new ScmRepository(DominoBuildRecipesScmLocator.SOURCE, "git", "https://github.com/apache/commons-lang.git"),
             Map.of("LANG_2_5", "deabeef"));
 
     @Test
     void lookupScmInfoRelaxNG() {
-        FqScmRef tag = new DominoBuildRecipesScmLocator(gitRepoCloneDir, List.of(gitRepoUri), new MutableRemoteScmLookup())
+        FqScmRef tag = new DominoBuildRecipesScmLocator(gitRepoCloneDir, List.of(gitRepoUri), new MutableRemoteScmLookup("git"))
                 .locate(Gav.of("relaxngDatatype:relaxngDatatype:20020414"));
         Assertions.assertNotNull(tag);
         Assertions.assertEquals(tag.scmRef().kind(), Kind.REVISION_ID);
@@ -87,7 +89,6 @@ class DominoBuildRecipesScmLocatorTest {
 
     @Test
     void lookupScmInfoCommonsLang() {
-        ;
         assertCommonsTag(new DominoBuildRecipesScmLocator(gitRepoCloneDir, List.of(gitRepoUri), scmLookup));
     }
 

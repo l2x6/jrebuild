@@ -34,11 +34,12 @@ import org.eclipse.jgit.lib.Ref;
 import org.jboss.logging.Logger;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
 import org.l2x6.jrebuild.api.scm.ScmRef.Kind;
+import org.l2x6.jrebuild.api.scm.ScmRepository;
 
 public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
     private static final Logger log = Logger.getLogger(GitRemoteScmLookup.class);
 
-    private final CompletableFuture<Map<String, UrlEntry>> urisToTagsToRevisions = new CompletableFuture<>();
+    private final CompletableFuture<Map<ScmRepository, UrlEntry>> urisToTagsToRevisions = new CompletableFuture<>();
     private final Path cacheFile;
     private final Instant minRetrievalTime;
 
@@ -58,12 +59,12 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
     }
 
     @Override
-    public String getRevision(String url, Kind kind, String name) {
+    public String getRevision(ScmRepository url, Kind kind, String name) {
         return getRefs(url, kind).get(name);
     }
 
     @Override
-    public Map<String, String> getRefs(String url, Kind kind) {
+    public Map<String, String> getRefs(ScmRepository url, Kind kind) {
         if (kind != Kind.TAG) {
             throw new IllegalArgumentException("Looking up remote refs other than tags is unsupported");
         }
@@ -88,14 +89,18 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
         }
     }
 
-    UrlEntry lsRemote(String url) {
+    UrlEntry lsRemote(ScmRepository url) {
         log.debugf("Loading tag -> SHA1 mappings from %s", url);
+
+        if (url.uri().contains("fuse-components")) {
+            throw new RuntimeException(url.toString());
+        }
         Map<String, String> tagsToHash;
         final Collection<Ref> tags;
         final Instant retrievalTime = Instant.now();
         try {
             tags = Git.lsRemoteRepository()
-                    .setRemote(url).setTags(true).call();
+                    .setRemote(url.uri()).setTags(true).call();
         } catch (GitAPIException e) {
             throw new RuntimeException("Failed to list of tags from " + url, e);
         }
@@ -104,6 +109,7 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
             var name = tag.getName().replace("refs/tags/", "");
             tagsToHash.put(name, tag.getPeeledObjectId() == null ? tag.getObjectId().name() : tag.getPeeledObjectId().name());
         }
+        log.debugf("Loaded tags from %s: %s", url, tagsToHash);
         if (tagsToHash.isEmpty()) {
             return new UrlEntry(url, retrievalTime, Collections.emptyMap());
         }
@@ -146,12 +152,12 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
         }
     }
 
-    static Map<String, UrlEntry> load(Path file) {
-        final Map<String, UrlEntry> result = new ConcurrentHashMap<>();
+    static Map<ScmRepository, UrlEntry> load(Path file) {
+        final Map<ScmRepository, UrlEntry> result = new ConcurrentHashMap<>();
         if (Files.isRegularFile(file)) {
             try {
                 Iterator<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8).iterator();
-                String url = null;
+                ScmRepository url = null;
                 Instant retrievalTime = null;
                 Map<String, String> val = null;
                 while (lines.hasNext()) {
@@ -163,11 +169,13 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
                             result.put(url, new UrlEntry(url, retrievalTime, val));
                         }
                         String[] entry = line.split(" ");
-                        if (entry.length != 2) {
+                        if (entry.length != 3) {
                             throw new IllegalStateException("Url line '" + line + "' has " + entry.length + " elements");
                         }
-                        url = entry[0];
-                        retrievalTime = Instant.parse(entry[1]);
+                        int colonPos = entry[1].indexOf(':');
+
+                        url = new ScmRepository(entry[0], entry[1].substring(0, colonPos), entry[1].substring(colonPos + 1));
+                        retrievalTime = Instant.parse(entry[2]);
                         val = new LinkedHashMap<>();
                     } else {
                         String[] entry = line.split(" ");
@@ -209,6 +217,11 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
     }
 
     @Override
+    public String type() {
+        return "git";
+    }
+
+    @Override
     public void close() {
         tasks.add(new CloseTask());
     }
@@ -218,11 +231,11 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
         @Override
         public void run() {
             try {
-                final Map<String, UrlEntry> uris = urisToTagsToRevisions.get(2, TimeUnit.SECONDS);
-                final Set<String> sortedUris = new TreeSet<>(uris.keySet());
+                final Map<ScmRepository, UrlEntry> uris = urisToTagsToRevisions.get(2, TimeUnit.SECONDS);
+                final Set<ScmRepository> sortedUris = new TreeSet<>(uris.keySet());
                 Files.createDirectories(cacheFile.getParent());
                 try (Writer w = Files.newBufferedWriter(cacheFile, StandardCharsets.UTF_8)) {
-                    for (String uri : sortedUris) {
+                    for (ScmRepository uri : sortedUris) {
                         final UrlEntry tags = uris.get(uri);
                         tags.append(w);
                     }
@@ -246,9 +259,9 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
         }
     }
 
-    static record UrlEntry(String url, Instant retrievalTime, Map<String, String> refs) {
+    static record UrlEntry(ScmRepository url, Instant retrievalTime, Map<String, String> refs) {
         public void append(Appendable out) throws IOException {
-            out.append(url).append(' ').append(retrievalTime.toString()).append('\n');
+            out.append(url.toString()).append(' ').append(retrievalTime.toString()).append('\n');
             refs.forEach((kk, vv) -> {
                 try {
                     out.append(' ').append(kk).append(' ').append(vv).append('\n');

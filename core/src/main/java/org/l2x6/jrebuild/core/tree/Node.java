@@ -10,13 +10,17 @@ public interface Node<T extends Node<T>> {
     List<T> children();
 
     default <V extends Visitor<T, V>> boolean accept(Visitor<T, V> visitor) {
-        if (visitor.enter((T) this)) {
-            for (T child : children()) {
-                if (!child.accept(visitor)) {
-                    break;
+        try {
+            if (visitor.enter((T) this)) {
+                for (T child : children()) {
+                    if (!child.accept(visitor)) {
+                        break;
+                    }
                 }
             }
+            return visitor.leave((T) this);
+        } catch (RuntimeException e) {
+            throw new RuntimeException("Exception while visiting " + this, e);
         }
-        return visitor.leave((T) this);
     }
 }

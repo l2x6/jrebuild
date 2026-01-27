@@ -21,6 +21,7 @@ import org.l2x6.pom.tuner.model.Gav;
 
 public class ReproducibleCentralScmLocator extends AbstractScmLocator {
     private static final Logger log = Logger.getLogger(ReproducibleCentralScmLocator.class);
+    private static final String SOURCE = "🌏︎";
     private final List<BuildspecRepository> buildspecRepositories;
 
     public ReproducibleCentralScmLocator(
@@ -41,9 +42,9 @@ public class ReproducibleCentralScmLocator extends AbstractScmLocator {
                 .map(repo -> repo.lookup(gav))
                 .filter(r -> r != null)
                 .map(recipe -> {
-                    String url = recipe.gitRepo();
+                    ScmRepository url = new ScmRepository(SOURCE, "git", recipe.gitRepo());
                     ScmRef ref = validateTag(url, recipe.gitTag(), gav.getVersion());
-                    return new FqScmRef(ref, new ScmRepository("git", url), "🌏︎");
+                    return new FqScmRef(ref, url);
                 })
                 .findFirst()
                 .orElse(null);

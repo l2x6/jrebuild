@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import org.jboss.logging.Logger;
+import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
 import org.l2x6.jrebuild.core.dep.DependencyCollector;
 import org.l2x6.jrebuild.core.dep.DependencyCollectorRequest;
 import org.l2x6.jrebuild.core.dep.DependencyCollectorRequest.Builder;
@@ -203,7 +204,8 @@ public class AnalyzeCommand implements Runnable {
                         "Specify some root artifacts using (a) --root-artifacts groupId[:artifactId[:version[:type[:classifier]]]][,groupId[:artifactId[:version[:type[:classifier]]]],...] or (b) using --bom groupId:artifactId:version and --bom-includes and --bom-excludes or by combining (a) and (b)");
             }
 
-            try (GitRemoteScmLookup remoteScm = new GitRemoteScmLookup(lsRemotesCache, minRetievalTime)) {
+            try (RemoteScmLookup.AggregateRemoteScmLookup remoteScm = new RemoteScmLookup.AggregateRemoteScmLookup(
+                    new GitRemoteScmLookup(lsRemotesCache, minRetievalTime))) {
                 final ScmRepositoryService locator = ScmRepositoryService.create(
                         context.lookup().lookup(CachingMavenModelReader.class).get()::readEffectiveModel,
                         remoteScm,
@@ -211,6 +213,7 @@ public class AnalyzeCommand implements Runnable {
                         reproducibleCentralUrls,
                         dominoRecipeUrls);
 
+                //final Collection<ScmInfoNode> dependencyTrees =
                 DependencyCollector.collect(context, re)
 
                         .onItem()
@@ -218,13 +221,18 @@ public class AnalyzeCommand implements Runnable {
                         .merge()
 
                         .onItem()
-                        .transformToUniAndMerge(resolvedArtifact -> Uni.createFrom().item(() -> {
-                            ScmInfoNode rootScmInfoNode = locator.newVisitor().walk(resolvedArtifact).rootNode();
-                            return PrintVisitor.toString(rootScmInfoNode);
-                        })
-                                .runSubscriptionOn(Infrastructure.getDefaultWorkerPool())
+                        .invoke(resolvedArtifact -> log.infof("Resolved:\n%s", PrintVisitor.toString(resolvedArtifact)))
 
-                        )
+                        .onItem()
+                        .transformToUniAndMerge(resolvedArtifact -> {
+
+                            return Uni.createFrom().item(() -> locator.newVisitor().walk(resolvedArtifact).rootNode())
+                                    .runSubscriptionOn(Infrastructure.getDefaultWorkerPool());
+
+                        })
+
+                        .onItem()
+                        .transform(PrintVisitor::toString)
 
                         .onItem()
                         .invoke(p -> log.infof("Scm Repos:\n%s", p))
@@ -233,8 +241,15 @@ public class AnalyzeCommand implements Runnable {
                         .collect().asList()
                         .await().indefinitely();
                 ;
+
+                //final Forest<ScmInfoNode> forest = new Forest<ScmInfoNode>(dependencyTrees);
             }
         }
+    }
+
+    private List<ScmInfoNode> merge(List<ScmInfoNode> dependencyGraphs) {
+        // TODO Auto-generated method stub
+        return null;
     }
 
     static Path resolveHome(Path userHome, Path path) {
