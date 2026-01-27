@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -54,7 +55,7 @@ public class DominoBuildRecipesScmLocator extends AbstractScmLocator {
         }
         //log.tracef("Found recipe for %s: %s", toBuild, recipe);
         final List<RepositoryInfo> repos = new ArrayList<>();
-        final List<TagMapping> allMappings = new ArrayList<>();
+        final Set<TagMapping> allMappings = new LinkedHashSet<>();
 
         for (RecipeFile recipe : recipes) {
             ScmInfo main;
@@ -80,7 +81,7 @@ public class DominoBuildRecipesScmLocator extends AbstractScmLocator {
 
             final String version = gav.getVersion();
             for (TagMapping mapping : allMappings) {
-                Matcher m = Pattern.compile(mapping.getPattern()).matcher(version);
+                Matcher m = mapping.pattern().matcher(version);
                 if (m.matches()) {
                     log.tracef("%s: pattern %s matches version %s", gav, mapping.getPattern(), version);
                     String tagTemplate = mapping.getTag();
