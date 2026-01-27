@@ -220,8 +220,9 @@ public class AnalyzeCommand implements Runnable {
                         .transformToMulti(resolvedArtifact -> new CutStemVisitor(stem).walk(resolvedArtifact).result())
                         .merge()
 
-                        .onItem()
-                        .invoke(resolvedArtifact -> log.infof("Resolved:\n%s", PrintVisitor.toString(resolvedArtifact)))
+                        // .onItem().invoke(resolvedArtifact -> log.infof("Resolved:\n%s", PrintVisitor.toString(resolvedArtifact)))
+
+                        .select().distinct()
 
                         .onItem()
                         .transformToUniAndMerge(resolvedArtifact -> {
@@ -231,11 +232,10 @@ public class AnalyzeCommand implements Runnable {
 
                         })
 
-                        .onItem()
-                        .transform(PrintVisitor::toString)
+                        .select().distinct()
 
                         .onItem()
-                        .invoke(p -> log.infof("Scm Repos:\n%s", p))
+                        .invoke(p -> log.infof("Scm Repos:\n%s", PrintVisitor.toString(p)))
                         .onFailure().invoke(e -> log.error(e.getMessage(), e))
 
                         .collect().asList()
