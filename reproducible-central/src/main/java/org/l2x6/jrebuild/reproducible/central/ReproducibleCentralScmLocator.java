@@ -4,6 +4,8 @@
  */
 package org.l2x6.jrebuild.reproducible.central;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -16,6 +18,7 @@ import org.l2x6.jrebuild.api.scm.ScmRef;
 import org.l2x6.jrebuild.api.scm.ScmRepository;
 import org.l2x6.jrebuild.common.git.GitUtils;
 import org.l2x6.jrebuild.common.scm.AbstractScmLocator;
+import org.l2x6.jrebuild.reproducible.central.api.Buildspec;
 import org.l2x6.jrebuild.reproducible.central.api.BuildspecRepository;
 import org.l2x6.pom.tuner.model.Gav;
 
@@ -37,17 +40,33 @@ public class ReproducibleCentralScmLocator extends AbstractScmLocator {
         this.buildspecRepositories = Collections.unmodifiableList(result);
     }
 
-    public FqScmRef locate(Gav gav) {
-        return buildspecRepositories.stream()
-                .map(repo -> repo.lookup(gav))
-                .filter(r -> r != null)
-                .map(recipe -> {
-                    ScmRepository url = new ScmRepository(SOURCE, "git", recipe.gitRepo());
-                    ScmRef ref = validateTag(url, recipe.gitTag(), gav.getVersion());
-                    return new FqScmRef(ref, url);
-                })
-                .findFirst()
-                .orElse(null);
+    public List<FqScmRef> locate(Gav gav) {
+        List<FqScmRef> result = new ArrayList<>();
+        for (BuildspecRepository repo : buildspecRepositories) {
+            Buildspec recipe = repo.lookup(gav);
+            if (recipe != null) {
+                ScmRepository uri = new ScmRepository(SOURCE, "git", recipe.gitRepo());
+                try {
+                    String tag = recipe.gitTag();
+                    ScmRef ref = validateTag(uri, tag, gav.getVersion());
+                    if (ref != null) {
+                        return List.of(new FqScmRef(ref, uri));
+                    }
+                    final String msg = "Could not find SCM revision for tag " + tag + " declared in " + recipe.file() + " for "
+                            + gav + " in " + uri;
+                    result.add(FqScmRef.createFailed(gav, uri, msg));
+                } catch (Exception e) {
+                    final StringWriter sw = new StringWriter();
+                    final String msg = "Could not find SCM ref for " + gav + " in " + uri;
+                    sw.append(msg).append("\n");
+                    try (PrintWriter pw = new PrintWriter(sw)) {
+                        e.printStackTrace(pw);
+                    }
+                    result.add(FqScmRef.createFailed(gav, uri, sw.toString()));
+                }
+            }
+        }
+        return Collections.unmodifiableList(result);
     }
 
 }

@@ -4,7 +4,9 @@
  */
 package org.l2x6.jrebuild.api.scm;
 
+import java.util.Collection;
 import java.util.Comparator;
+import org.l2x6.jrebuild.api.util.Ebnfizer;
 import org.l2x6.pom.tuner.model.Gav;
 
 public record ScmRepository(
@@ -12,6 +14,7 @@ public record ScmRepository(
         String type,
         String uri) implements Comparable<ScmRepository> {
     public static String UNKNOWN = "unknown";
+    public static String FAILED = "failed";
     private static final Comparator<ScmRepository> COMPARATOR = Comparator.comparing(ScmRepository::uri)
             .thenComparing(ScmRepository::type).thenComparing(ScmRepository::source);
 
@@ -27,8 +30,20 @@ public record ScmRepository(
         return new ScmRepository("?", UNKNOWN, gav.getGroupId());
     }
 
+    public static ScmRepository createFailed(Collection<ScmRepository> failedRepositories) {
+
+        return new ScmRepository(
+                "?",
+                FAILED,
+                new Ebnfizer().add(failedRepositories.stream().map(ScmRepository::toString)).toString());
+    }
+
     public boolean isUnknown() {
         return UNKNOWN.equals(type);
+    }
+
+    public boolean isFailed() {
+        return FAILED.equals(type);
     }
 
     public boolean isKnown() {
@@ -44,4 +59,9 @@ public record ScmRepository(
     public int compareTo(ScmRepository o) {
         return COMPARATOR.compare(this, o);
     }
+
+    public boolean isUnknownOrFailed() {
+        return UNKNOWN.equals(type) || FAILED.equals(type);
+    }
+
 }

@@ -10,16 +10,36 @@ public record ScmRef(
         String revision) {
 
     public static enum Kind {
-        TAG(false), BRANCH(false), COMMIT(false), REVISION_ID(false), UNKNOWN(true);
+        TAG, BRANCH, COMMIT, REVISION_ID, UNKNOWN("❌"), FAILED("💣");
 
-        private Kind(boolean unknown) {
-            this.unknown = unknown;
+        private Kind() {
+            this("✅");
         }
 
-        private final boolean unknown;
+        private Kind(String icon) {
+            this.icon = icon;
+        }
 
-        public boolean isUnknown() {
-            return unknown;
+        private final String icon;
+
+        public String icon() {
+            return icon;
+        }
+
+        public boolean isUnknownOrFailed() {
+            return this == UNKNOWN || this == FAILED;
+        }
+
+        public ScmRef createRef(String name, String revision) {
+            return new ScmRef(this, name, revision);
+        }
+
+        boolean isUnknown() {
+            return this == UNKNOWN;
+        }
+
+        boolean isFailed() {
+            return this == FAILED;
         }
     }
 
@@ -27,8 +47,20 @@ public record ScmRef(
         return new ScmRef(Kind.UNKNOWN, "unknown-for-version-" + version, null);
     }
 
+    public static ScmRef createFailed(String version) {
+        return new ScmRef(Kind.FAILED, "failed-for-version-" + version, null);
+    }
+
     public boolean isUnknown() {
         return kind.isUnknown();
+    }
+
+    public boolean isFailed() {
+        return kind.isFailed();
+    }
+
+    public boolean isUnknownOrFailed() {
+        return kind.isUnknownOrFailed();
     }
 
     @Override

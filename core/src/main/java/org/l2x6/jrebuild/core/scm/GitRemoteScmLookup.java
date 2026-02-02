@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -109,7 +110,7 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
             var name = tag.getName().replace("refs/tags/", "");
             tagsToHash.put(name, tag.getPeeledObjectId() == null ? tag.getObjectId().name() : tag.getPeeledObjectId().name());
         }
-        log.debugf("Loaded tags from %s: %s", url, tagsToHash);
+        log.tracef("Loaded tags from %s: %s", url, tagsToHash);
         if (tagsToHash.isEmpty()) {
             return new UrlEntry(url, retrievalTime, Collections.emptyMap());
         }
@@ -165,12 +166,15 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
                     if (line.isEmpty()) {
                         continue;
                     } else if (!line.startsWith(" ")) {
+                        /* URL line */
                         if (url != null) {
                             result.put(url, new UrlEntry(url, retrievalTime, val));
                         }
                         String[] entry = line.split(" ");
                         if (entry.length != 3) {
-                            throw new IllegalStateException("Url line '" + line + "' has " + entry.length + " elements");
+                            log.warn("Url line '" + line + "' in " + file + " has " + entry.length
+                                    + " elements; expected: 3; ignoring the rest of file");
+                            return result;
                         }
                         int colonPos = entry[1].indexOf(':');
 
@@ -180,7 +184,9 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
                     } else {
                         String[] entry = line.split(" ");
                         if (entry.length != 3) {
-                            throw new IllegalStateException("Tag line '" + line + "' has " + entry.length + " elements");
+                            log.warn("Tag line '" + line + "' in " + file + " has " + entry.length
+                                    + " elements; expected: 3; ignoring the rest of file");
+                            return result;
                         }
                         val.put(entry[1], entry[2]);
                     }
@@ -223,16 +229,22 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
 
     @Override
     public void close() {
-        tasks.add(new CloseTask());
+        CloseTask closeTask = new CloseTask();
+        tasks.add(closeTask);
+        closeTask.await(Duration.ofSeconds(10));
     }
 
     class CloseTask implements Runnable {
+
+        private final CompletableFuture<Integer> result = new CompletableFuture<>();
 
         @Override
         public void run() {
             try {
                 final Map<ScmRepository, UrlEntry> uris = urisToTagsToRevisions.get(2, TimeUnit.SECONDS);
                 final Set<ScmRepository> sortedUris = new TreeSet<>(uris.keySet());
+                log.infof("Storing tag -> SHA mappings for %d git repositories to %s due to application shutdown",
+                        sortedUris.size(), cacheFile);
                 Files.createDirectories(cacheFile.getParent());
                 try (Writer w = Files.newBufferedWriter(cacheFile, StandardCharsets.UTF_8)) {
                     for (ScmRepository uri : sortedUris) {
@@ -240,9 +252,22 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
                         tags.append(w);
                     }
                 }
-                log.infof("Stored tag -> SHA mappings for %d git repositories from %s", sortedUris.size(), cacheFile);
+                result.complete(sortedUris.size());
             } catch (Exception e) {
-                throw new RuntimeException("Could not write to " + cacheFile, e);
+                result.completeExceptionally(e);
+            }
+        }
+
+        public Integer await(Duration timeout) {
+            try {
+                return result.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Interrupted while writing to " + cacheFile, e);
+            } catch (ExecutionException e) {
+                throw new RuntimeException("Failed writing to " + cacheFile, e);
+            } catch (TimeoutException e) {
+                throw new RuntimeException("Timeout while writing to " + cacheFile, e);
             }
         }
 

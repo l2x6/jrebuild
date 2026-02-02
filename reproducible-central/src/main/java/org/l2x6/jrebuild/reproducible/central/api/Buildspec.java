@@ -23,6 +23,10 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 public record Buildspec(
+
+        /** From where this Buildspec was loaded */
+        Path file,
+
         /* 1. what does this rebuild? */
         /** Central Repository coordinates for the Reference release (for multi-module, pick an artitrary module) */
         String groupId,
@@ -326,7 +330,7 @@ public record Buildspec(
             final String diffoscope = resolve(Key.diffoscope);
             final String issue = resolve(Key.issue);
 
-            return new Buildspec(groupId, artifactId, version, display, referenceRepo, layout, gitRepo, gitTag,
+            return new Buildspec(file, groupId, artifactId, version, display, referenceRepo, layout, gitRepo, gitTag,
                     sourceDistribution,
                     sourcePath, sourceRmFiles, tool, jdk, toolchains, newline, newlineGit, umask, timezone, locale, os, arch,
                     jdkForceAzul,
