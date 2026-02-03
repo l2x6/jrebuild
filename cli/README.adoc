@@ -15,7 +15,8 @@ java -jar target/quarkus-app/quarkus-run.jar analyze \
   --domino-recipes-urls='file:///home/ppalaga/orgs/ceq-3.27/camel-spring-boot-depstobuild,file:///home/ppalaga/orgs/ceq-3.27/jvm-build-data' \
   > ~/zzz/log.txt 2>&1
 
-java -jar target/quarkus-app/quarkus-run.jar analyze \
+ASPROF_OPTIONS="-agentpath:$HOME/bin/async-profiler-installations/current/lib/libasyncProfiler.so=start,event=wall,file=profile.html"
+time java "$ASPROF_OPTIONS" -jar target/quarkus-app/quarkus-run.jar analyze \
   --root-artifacts='commons-beanutils:commons-beanutils:1.11.0' \
   --reproducible-central-urls='file:///home/ppalaga/orgs/pnc/reproducible-central/.git' \
   --domino-recipes-urls='file:///home/ppalaga/orgs/ceq-3.27/camel-spring-boot-depstobuild,file:///home/ppalaga/orgs/ceq-3.27/jvm-build-data' \
