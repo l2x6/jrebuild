@@ -27,7 +27,8 @@ public class AbstractScmLocatorTest {
                 "r1.2.3",
                 "rel/1.2.3",
                 "rel/foo-core-1.2.3",
-                "QUARKUS_1_2_3");
+                "QUARKUS_1_2_3",
+                "QUARKUS-1_2_3");
     }
 
     @Test

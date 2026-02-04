@@ -4,8 +4,11 @@
  */
 package org.l2x6.jrebuild.reproducible.central.api;
 
+import java.util.Set;
 import org.l2x6.pom.tuner.model.Gav;
 
 public interface BuildspecRepository {
     public Buildspec lookup(Gav gav);
+
+    public Set<Gav> gavs();
 }

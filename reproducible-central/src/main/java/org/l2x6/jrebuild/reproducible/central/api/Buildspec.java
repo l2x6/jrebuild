@@ -8,9 +8,13 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.AbstractMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -107,6 +111,115 @@ public record Buildspec(
         } catch (Exception e) {
             throw new RuntimeException("Could not parse " + file, e);
         }
+    }
+
+    static void putProperty(Properties properties, String key, Object value) {
+        if (value != null) {
+            properties.put(key, String.valueOf(value));
+        }
+    }
+
+    public void put(Properties properties) {
+        putProperty(properties, "file", file);
+        putProperty(properties, Key.groupId.name(), groupId);
+        putProperty(properties, Key.artifactId.name(), artifactId);
+        putProperty(properties, Key.version.name(), version);
+        putProperty(properties, Key.display.name(), display);
+        putProperty(properties, Key.referenceRepo.name(), referenceRepo);
+        putProperty(properties, Key.layout.name(), layout);
+        putProperty(properties, Key.gitRepo.name(), gitRepo);
+        putProperty(properties, Key.gitTag.name(), gitTag);
+        putProperty(properties, Key.sourceDistribution.name(), sourceDistribution);
+        putProperty(properties, Key.sourcePath.name(), sourcePath);
+        putProperty(properties, Key.sourceRmFiles.name(), sourceRmFiles);
+        putProperty(properties, Key.tool.name(), tool);
+        putProperty(properties, Key.jdk.name(), jdk);
+        putProperty(properties, Key.toolchains.name(), toolchains);
+        putProperty(properties, Key.newline.name(), newline);
+        putProperty(properties, Key.newlineGit.name(), newlineGit);
+        putProperty(properties, Key.umask.name(), umask);
+        putProperty(properties, Key.timezone.name(), timezone);
+        putProperty(properties, Key.locale.name(), locale);
+        putProperty(properties, Key.os.name(), os);
+        putProperty(properties, Key.arch.name(), arch);
+        putProperty(properties, Key.jdkForceAzul.name(), jdkForceAzul);
+        putProperty(properties, Key.workdir.name(), workdir);
+        putProperty(properties, Key.command.name(), command);
+        putProperty(properties, Key.execBefore.name(), execBefore);
+        putProperty(properties, Key.execAfter.name(), execAfter);
+        putProperty(properties, Key.buildinfo.name(), buildinfo);
+        putProperty(properties, Key.diffoscope.name(), diffoscope);
+        putProperty(properties, Key.issue.name(), issue);
+        putProperty(properties, "gav", gav);
+    }
+
+    public static Buildspec fromProperties(Properties properties, Path propertiesFile) {
+        final Path file = Path.of(properties.getProperty("file"));
+        String groupId = properties.getProperty(Key.groupId.name());
+        String artifactId = properties.getProperty(Key.artifactId.name());
+        String version = properties.getProperty(Key.version.name());
+        String display = properties.getProperty(Key.display.name());
+        String referenceRepo = properties.getProperty(Key.referenceRepo.name());
+        String layout = properties.getProperty(Key.layout.name());
+        String gitRepo = properties.getProperty(Key.gitRepo.name());
+        String gitTag = properties.getProperty(Key.gitTag.name());
+        String sourceDistribution = properties.getProperty(Key.sourceDistribution.name());
+        String sourcePath = properties.getProperty(Key.sourcePath.name());
+        String sourceRmFiles = properties.getProperty(Key.sourceRmFiles.name());
+        String tool = properties.getProperty(Key.tool.name());
+        String jdk = properties.getProperty(Key.jdk.name());
+        String toolchains = properties.getProperty(Key.toolchains.name());
+        Newline newline = Optional.ofNullable(properties.getProperty(Key.newline.name()))
+                .map(val -> Newline.of(val, propertiesFile)).orElse(null);
+        Newline newlineGit = Optional.ofNullable(properties.getProperty(Key.newlineGit.name()))
+                .map(val -> Newline.of(val, propertiesFile)).orElse(null);
+        String umask = properties.getProperty(Key.umask.name());
+        String timezone = properties.getProperty(Key.timezone.name());
+        String locale = properties.getProperty(Key.locale.name());
+        String os = properties.getProperty(Key.os.name());
+        String arch = properties.getProperty(Key.arch.name());
+        boolean jdkForceAzul = Boolean.parseBoolean(properties.getProperty(Key.jdkForceAzul.name()));
+        String workdir = properties.getProperty(Key.workdir.name());
+        String command = properties.getProperty(Key.command.name());
+        String execBefore = properties.getProperty(Key.execBefore.name());
+        String execAfter = properties.getProperty(Key.execAfter.name());
+        String buildinfo = properties.getProperty(Key.buildinfo.name());
+        String diffoscope = properties.getProperty(Key.diffoscope.name());
+        String issue = properties.getProperty(Key.issue.name());
+        Gav gav = Gav.of(properties.getProperty("gav"));
+
+        return new Buildspec(
+                file,
+                groupId,
+                artifactId,
+                version,
+                display,
+                referenceRepo,
+                layout,
+                gitRepo,
+                gitTag,
+                sourceDistribution,
+                sourcePath,
+                sourceRmFiles,
+                tool,
+                jdk,
+                toolchains,
+                newline,
+                newlineGit,
+                umask,
+                timezone,
+                locale,
+                os,
+                arch,
+                jdkForceAzul,
+                workdir,
+                command,
+                execBefore,
+                execAfter,
+                buildinfo,
+                diffoscope,
+                issue,
+                gav);
     }
 
     public static Buildspec of(Path file, String document) {
@@ -275,6 +388,14 @@ public record Buildspec(
     }
 
     public static class Builder {
+        private static final MessageDigest sha256Digest;
+        static {
+            try {
+                sha256Digest = MessageDigest.getInstance("SHA-256");
+            } catch (NoSuchAlgorithmException e) {
+                throw new RuntimeException(e);
+            }
+        }
 
         private Map<String, String> values = new LinkedHashMap<>();
 

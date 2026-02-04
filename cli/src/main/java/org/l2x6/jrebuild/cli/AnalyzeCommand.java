@@ -149,10 +149,12 @@ public class AnalyzeCommand implements Runnable {
     Instant minRetievalTime;
 
     @CommandLine.Option(names = {
-            "--ls-remotes-cache" }, description = """
-                    A file where the tag name -> sha1 mappings are cached for remote SCM repositories
-                    """, defaultValue = "~/.cache/jrebuild/ls-remotes-cache.txt")
-    Path lsRemotesCache;
+            "--cache-dir" },
+            description = """
+                    A directory under which various cache and index files are stored, such as ls-remotes-cache.txt - the tag name -> sha1 mappings are cached for remote SCM repositories
+                    """,
+            defaultValue = "~/.cache/jrebuild")
+    Path cacheDir;
 
     public AnalyzeCommand() {
     }
@@ -162,7 +164,8 @@ public class AnalyzeCommand implements Runnable {
 
         final Path userHome = Path.of(System.getProperty("user.home"));
         dominoCloneDir = resolveHome(userHome, dominoCloneDir);
-        lsRemotesCache = resolveHome(userHome, lsRemotesCache);
+        cacheDir = resolveHome(userHome, cacheDir);
+        final Path lsRemotesCache = cacheDir.resolve("ls-remotes-cache.txt");
 
         final Path cacheDir = userHome.resolve(".cache/jrebuild");
         if (rawMinRetievalTime == null) {
@@ -210,6 +213,7 @@ public class AnalyzeCommand implements Runnable {
                         context.lookup().lookup(CachingMavenModelReader.class).get()::readEffectiveModel,
                         remoteScm,
                         dominoCloneDir,
+                        cacheDir,
                         reproducibleCentralUrls,
                         dominoRecipeUrls);
 

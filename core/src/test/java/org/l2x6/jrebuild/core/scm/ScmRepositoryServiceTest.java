@@ -34,7 +34,9 @@ public class ScmRepositoryServiceTest {
 
     @Test
     void scm() {
-        Path gitRepoCloneDir = Path.of("target/git-recipes-clone-" + UUID.randomUUID()).toAbsolutePath();
+        UUID uuid = UUID.randomUUID();
+        Path gitRepoCloneDir = Path.of("target/git-recipes-clone-" + uuid).toAbsolutePath();
+        Path cacheDir = Path.of("target/cache-" + uuid).toAbsolutePath();
 
         Runtime runtime = JRebuildRuntime.getInstance();
         ContextOverrides.Builder overrides = JrebuildTestUtils.testRepo();
@@ -50,6 +52,7 @@ public class ScmRepositoryServiceTest {
                             new ScmRepository("♢", "git", "https://github.com/l2x6/jrebuild-test"),
                             Map.of("0.0.1", "deadbeef")),
                     gitRepoCloneDir,
+                    cacheDir,
                     Collections.emptyList(),
                     Collections.emptyList());
             List<String> trees = DependencyCollector.collect(context, re)
@@ -62,8 +65,8 @@ public class ScmRepositoryServiceTest {
                     .collect(Collectors.toList());
             Assertions.assertThat(trees).containsExactly(
                     """
-                            ✅ ♢ git:https://github.com/l2x6/jrebuild-test#0.0.1@deadbeef [org.l2x6.jrebuild.test-project:*:0.0.1]
-                            `- ❌ ♢ git:https://github.com/l2x6/jrebuild-test-transitive#unknown-for-version-0.0.1@null [org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1:jar]
+                            ✅♢ git:https://github.com/l2x6/jrebuild-test#0.0.1@deadbeef [org.l2x6.jrebuild.test-project:jrebuild-test-(api|impl|optional|project):0.0.1]
+                            `- 💣? failed:♢ git:https://github.com/l2x6/jrebuild-test-transitive[.git]#failed-for-version-0.0.1@null: Could not find SCM revision for tag 0.0.1 declared in the POM of org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1 in ♢ git:https://github.com/l2x6/jrebuild-test-transitive[.git] [org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1:jar]
                             """);
         }
     }

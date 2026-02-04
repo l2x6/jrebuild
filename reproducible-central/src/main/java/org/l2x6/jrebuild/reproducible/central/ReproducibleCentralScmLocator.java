@@ -29,13 +29,15 @@ public class ReproducibleCentralScmLocator extends AbstractScmLocator {
 
     public ReproducibleCentralScmLocator(
             Path gitCloneBaseDir,
+            Path cacheDir,
             Collection<String> reproducibleCentralGitRepositories,
             RemoteScmLookup scmLookup) {
         super(scmLookup);
         final List<BuildspecRepository> result = new ArrayList<>();
         for (String url : reproducibleCentralGitRepositories) {
             final Path workingCopyDir = gitCloneBaseDir.resolve(GitUtils.uriToFileName(url));
-            result.add(ReproducibleCentralLayout.cloneOrFetch(url, "master", workingCopyDir));
+            result.add(ReproducibleCentralLayout.cloneOrFetch(url, "master", workingCopyDir,
+                    cacheDir.resolve("reproducible-central-index")));
         }
         this.buildspecRepositories = Collections.unmodifiableList(result);
     }

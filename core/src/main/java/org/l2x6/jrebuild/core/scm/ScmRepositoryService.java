@@ -48,10 +48,11 @@ public class ScmRepositoryService {
             Function<Gav, Model> getEffectiveModel,
             RemoteScmLookup remoteScm,
             Path cloneDirectory,
+            Path cacheDir,
             Collection<String> reproducibleCentralGitRepositories,
             Collection<String> dominoRecipeUrls) {
         return new ScmRepositoryService(List.of(
-                new ReproducibleCentralScmLocator(cloneDirectory, reproducibleCentralGitRepositories, remoteScm),
+                new ReproducibleCentralScmLocator(cloneDirectory, cacheDir, reproducibleCentralGitRepositories, remoteScm),
                 new DominoBuildRecipesScmLocator(cloneDirectory, dominoRecipeUrls, remoteScm),
                 new PomScmLocator(getEffectiveModel, remoteScm)));
     }
@@ -87,7 +88,7 @@ public class ScmRepositoryService {
                         Builder current = it.next();
                         if (last == null || !current.equals(last)) {
                             /* Eliminate dups on the stack */
-                            failureMessages.append("\n    referenced from ").append(it.next());
+                            failureMessages.append("\n    referenced from ").append(current);
                         }
                         last = current;
                     }
