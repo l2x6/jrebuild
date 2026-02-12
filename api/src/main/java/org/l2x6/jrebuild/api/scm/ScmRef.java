@@ -10,7 +10,7 @@ public record ScmRef(
         String revision) {
 
     public static enum Kind {
-        TAG, BRANCH, COMMIT, REVISION_ID, UNKNOWN("❌"), FAILED("💣");
+        TAG, BRANCH, COMMIT, UNKNOWN("❌"), FAILED("💣");
 
         private Kind() {
             this("✅");

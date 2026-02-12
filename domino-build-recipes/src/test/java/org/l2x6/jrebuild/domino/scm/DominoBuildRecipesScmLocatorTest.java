@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.l2x6.jrebuild.api.scm.FqScmRef;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup.MutableRemoteScmLookup;
+import org.l2x6.jrebuild.api.scm.Result;
 import org.l2x6.jrebuild.api.scm.ScmRef.Kind;
 import org.l2x6.jrebuild.api.scm.ScmRepository;
 import org.l2x6.jrebuild.common.git.GitUtils;
@@ -73,8 +74,9 @@ class DominoBuildRecipesScmLocatorTest {
     }
 
     static final RemoteScmLookup scmLookup = new MutableRemoteScmLookup("git").put(
+
             new ScmRepository(DominoBuildRecipesScmLocator.SOURCE, "git", "https://github.com/apache/commons-lang.git"),
-            Map.of("LANG_2_5", "deabeef"));
+            Result.success(Map.of("LANG_2_5", "deabeef")));
 
     @Test
     void lookupScmInfoRelaxNG() {
@@ -83,7 +85,7 @@ class DominoBuildRecipesScmLocatorTest {
                 .locate(Gav.of("relaxngDatatype:relaxngDatatype:20020414"));
         org.assertj.core.api.Assertions.assertThat(result).hasSize(1);
         final FqScmRef tag = result.get(0);
-        Assertions.assertEquals(tag.scmRef().kind(), Kind.REVISION_ID);
+        Assertions.assertEquals(tag.scmRef().kind(), Kind.COMMIT);
         Assertions.assertEquals(tag.scmRef().name(), tag.scmRef().revision());
         Assertions.assertEquals(tag.repository().uri(),
                 "https://github.com/java-schema-utilities/relaxng-datatype-java.git");

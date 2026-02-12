@@ -97,4 +97,12 @@ public class JrebuildUtils {
             return list;
         }
     }
+
+    public static Throwable rootCause(Throwable e) {
+        while (e.getCause() != null) {
+            e = e.getCause();
+        }
+        return e;
+    }
+
 }

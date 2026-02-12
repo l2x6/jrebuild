@@ -23,6 +23,7 @@ import java.util.regex.Pattern;
 import org.jboss.logging.Logger;
 import org.l2x6.jrebuild.api.scm.FqScmRef;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
+import org.l2x6.jrebuild.api.scm.Result;
 import org.l2x6.jrebuild.api.scm.ScmRef;
 import org.l2x6.jrebuild.api.scm.ScmRef.Kind;
 import org.l2x6.jrebuild.api.scm.ScmRepository;
@@ -51,10 +52,6 @@ public class DominoBuildRecipesScmLocator extends AbstractScmLocator {
     }
 
     public List<FqScmRef> locate(Gav gav) {
-
-        if (Gav.of("org.apache.logging.log4j:log4j-1.2-api:2.24.3").equals(gav)) {
-            System.out.println();
-        }
         final List<RecipeFile> recipes = recipeGroupManager.lookupScmInformation(gav);
         if (recipes.isEmpty()) {
             return List.of();
@@ -87,31 +84,37 @@ public class DominoBuildRecipesScmLocator extends AbstractScmLocator {
             log.debugf("Mapping %s to a tag in %s with mappings %s", gav, uri, allMappings);
 
             try {
-                final Map<String, String> tagsToHash = scmLookup.getRefs(uri, Kind.TAG);
+                final Result<Map<String, String>, String> tagsToHashResult = scmLookup.getRefs(uri, Kind.TAG);
                 final String version = gav.getVersion();
-                for (TagMapping mapping : allMappings) {
-                    Matcher m = mapping.pattern().matcher(version);
-                    if (m.matches()) {
-                        log.tracef("%s: pattern %s matches version %s", gav, mapping.getPattern(), version);
-                        String tagTemplate = mapping.getTag();
-                        for (int i = 0; i <= m.groupCount(); ++i) {
-                            tagTemplate = tagTemplate.replaceAll("\\$" + i, m.group(i));
+                if (tagsToHashResult.isFailure()) {
+                    result.add(FqScmRef.createFailed(version, uri, tagsToHashResult.failure()));
+                } else {
+                    Map<String, String> tagsToHash = tagsToHashResult.result();
+                    for (TagMapping mapping : allMappings) {
+                        Matcher m = mapping.pattern().matcher(version);
+                        if (m.matches()) {
+                            log.tracef("%s: pattern %s matches version %s", gav, mapping.getPattern(), version);
+                            String tagTemplate = mapping.getTag();
+                            for (int i = 0; i <= m.groupCount(); ++i) {
+                                tagTemplate = tagTemplate.replaceAll("\\$" + i, m.group(i));
+                            }
+                            final String sha = tagsToHash.get(tagTemplate);
+                            if (sha != null) {
+                                return List.of(new FqScmRef(new ScmRef(Kind.TAG, tagTemplate, sha), uri));
+                            }
+                            if (isSha1(tagTemplate)) {
+                                return List.of(new FqScmRef(new ScmRef(Kind.COMMIT, tagTemplate, tagTemplate),
+                                        uri));
+                            }
+                        } else {
+                            log.tracef("%s: pattern %s does not match version %s", gav, mapping.getPattern(), version);
                         }
-                        final String sha = tagsToHash.get(tagTemplate);
-                        if (sha != null) {
-                            return List.of(new FqScmRef(new ScmRef(Kind.TAG, tagTemplate, sha), uri));
-                        }
-                        if (isSha1(tagTemplate)) {
-                            return List.of(new FqScmRef(new ScmRef(Kind.REVISION_ID, tagTemplate, tagTemplate),
-                                    uri));
-                        }
-                    } else {
-                        log.tracef("%s: pattern %s does not match version %s", gav, mapping.getPattern(), version);
                     }
-                }
-                ScmRef ref = guessTag(uri, gav, tagsToHash);
-                if (ref != null) {
-                    return List.of(new FqScmRef(ref, uri));
+                    ScmRef ref = guessTag(uri, gav, tagsToHash);
+                    if (ref != null) {
+                        return List.of(new FqScmRef(ref, uri));
+                    }
+                    result.add(FqScmRef.createFailed(version, uri, "Tag not found for version " + version + " in " + uri));
                 }
             } catch (Exception e) {
                 final StringWriter sw = new StringWriter();
@@ -120,7 +123,7 @@ public class DominoBuildRecipesScmLocator extends AbstractScmLocator {
                 try (PrintWriter pw = new PrintWriter(sw)) {
                     e.printStackTrace(pw);
                 }
-                result.add(FqScmRef.createFailed(gav, uri, sw.toString()));
+                result.add(FqScmRef.createFailed(gav.getVersion(), uri, sw.toString()));
             }
         }
         return Collections.unmodifiableList(result);

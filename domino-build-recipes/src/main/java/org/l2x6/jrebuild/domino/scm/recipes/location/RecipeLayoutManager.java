@@ -9,8 +9,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.jboss.logging.Logger;
+import org.l2x6.jrebuild.api.util.ComparableVersion;
 import org.l2x6.jrebuild.domino.scm.recipes.location.RecipeFile.Priority;
-import org.l2x6.jrebuild.domino.scm.recipes.util.ComparableVersion;
 import org.l2x6.pom.tuner.model.Gav;
 
 /**

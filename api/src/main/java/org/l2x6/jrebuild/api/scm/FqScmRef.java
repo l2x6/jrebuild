@@ -23,8 +23,8 @@ public record FqScmRef(ScmRef scmRef, ScmRepository repository, String failureMe
         return new FqScmRef(ScmRef.createUnknown(gav.getVersion()), ScmRepository.createUnknown(gav));
     }
 
-    public static FqScmRef createFailed(Gav gav, ScmRepository repository, String failureMessage) {
-        return new FqScmRef(ScmRef.createFailed(gav.getVersion()), repository, failureMessage);
+    public static FqScmRef createFailed(String version, ScmRepository repository, String failureMessage) {
+        return new FqScmRef(ScmRef.createFailed(version), repository, failureMessage);
     }
 
     public boolean isUnknownOrFailed() {

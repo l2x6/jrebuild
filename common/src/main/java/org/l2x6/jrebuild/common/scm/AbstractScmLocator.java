@@ -12,7 +12,9 @@ import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.regex.Pattern;
 import org.eclipse.jgit.transport.URIish;
+import org.l2x6.jrebuild.api.scm.FqScmRef;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
+import org.l2x6.jrebuild.api.scm.Result;
 import org.l2x6.jrebuild.api.scm.ScmLocator;
 import org.l2x6.jrebuild.api.scm.ScmRef;
 import org.l2x6.jrebuild.api.scm.ScmRef.Kind;
@@ -30,6 +32,8 @@ public abstract class AbstractScmLocator implements ScmLocator {
             (repo, gav) -> "v" + gav.getVersion(),
             (repo, gav) -> "v_" + gav.getVersion(),
             (repo, gav) -> "r" + gav.getVersion(),
+            // seen in https://github.com/eclipse-aspectj/aspectj
+            (repo, gav) -> "V" + gav.getVersion().replace('.', '_'),
             // seen in commons-beanutils
             (repo, gav) -> "rel/" + gav.getVersion(),
             (repo, gav) -> "rel/" + gav.getArtifactId() + "-" + gav.getVersion(),
@@ -65,13 +69,12 @@ public abstract class AbstractScmLocator implements ScmLocator {
         return null;
     }
 
-    protected ScmRef validateTag(ScmRepository url, String tag, String version) {
+    protected FqScmRef validateTag(ScmRepository url, String tag, String version) {
         final Kind kind = Kind.TAG;
-        final String revision = scmLookup.getRevision(url, kind, tag);
-        if (revision != null) {
-            return new ScmRef(kind, tag, revision);
-        }
-        return null;
+        final Result<String, String> rev = scmLookup.getRevision(url, kind, tag);
+        return rev.reduce(
+                commitId -> (FqScmRef) new FqScmRef(new ScmRef(kind, tag, commitId), url),
+                failure -> (FqScmRef) FqScmRef.createFailed(version, url, failure));
     }
 
     protected boolean isSha1(String revision) {

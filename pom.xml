@@ -65,6 +65,7 @@
         <maven.version>3.9.11</maven.version>
         <mima.version>2.4.35</mima.version>
         <pom-tuner.version>4.10.0</pom-tuner.version>
+        <pnc.version>3.3.1</pnc.version>
         <resolver.version>1.9.24</resolver.version>
         <quarkus.version>3.28.5</quarkus.version>
 
@@ -74,6 +75,7 @@
         <central-publishing-maven-plugin.version>0.9.0</central-publishing-maven-plugin.version>
         <formatter-maven-plugin.version>2.29.0</formatter-maven-plugin.version>
         <impsort-maven-plugin.version>1.12.0</impsort-maven-plugin.version>
+        <jandex-maven-plugin.version>3.5.3</jandex-maven-plugin.version>
         <license-maven-plugin.version>5.0.0</license-maven-plugin.version>
         <maven-clean-plugin.version>3.5.0</maven-clean-plugin.version>
         <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>
@@ -113,6 +115,7 @@
         <module>core</module>
         <module>domino-build-recipes</module>
         <module>reproducible-central</module>
+        <module>pnc</module>
         <module>cli</module>
     </modules>
 
@@ -125,6 +128,12 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <dependency>
+                <groupId>org.jboss.pnc</groupId>
+                <artifactId>rest-api</artifactId>
+                <version>${pnc.version}</version>
+            </dependency>
+
             <dependency>
                 <groupId>org.l2x6.jrebuild</groupId>
                 <artifactId>jrebuild-api</artifactId>
@@ -143,6 +152,11 @@
             <dependency>
                 <groupId>org.l2x6.jrebuild</groupId>
                 <artifactId>jrebuild-domino-build-recipes</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.l2x6.jrebuild</groupId>
+                <artifactId>jrebuild-pnc</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -382,6 +396,11 @@
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>mrm-maven-plugin</artifactId>
                     <version>1.7.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>io.smallrye</groupId>
+                    <artifactId>jandex-maven-plugin</artifactId>
+                    <version>${jandex-maven-plugin.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>

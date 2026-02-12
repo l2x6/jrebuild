@@ -14,7 +14,6 @@ import java.util.List;
 import org.jboss.logging.Logger;
 import org.l2x6.jrebuild.api.scm.FqScmRef;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
-import org.l2x6.jrebuild.api.scm.ScmRef;
 import org.l2x6.jrebuild.api.scm.ScmRepository;
 import org.l2x6.jrebuild.common.git.GitUtils;
 import org.l2x6.jrebuild.common.scm.AbstractScmLocator;
@@ -50,13 +49,15 @@ public class ReproducibleCentralScmLocator extends AbstractScmLocator {
                 ScmRepository uri = new ScmRepository(SOURCE, "git", recipe.gitRepo());
                 try {
                     String tag = recipe.gitTag();
-                    ScmRef ref = validateTag(uri, tag, gav.getVersion());
-                    if (ref != null) {
-                        return List.of(new FqScmRef(ref, uri));
+                    FqScmRef ref = validateTag(uri, tag, gav.getVersion());
+                    if (ref.isFailed()) {
+                        result.add(ref);
+                    } else {
+                        return List.of(ref);
                     }
-                    final String msg = "Could not find SCM revision for tag " + tag + " declared in " + recipe.file() + " for "
-                            + gav + " in " + uri;
-                    result.add(FqScmRef.createFailed(gav, uri, msg));
+                    //                    final String msg = "Could not find SCM revision for tag " + tag + " declared in " + recipe.file() + " for "
+                    //                            + gav + " in " + uri;
+                    //                    result.add(FqScmRef.createFailed(gav, uri, msg));
                 } catch (Exception e) {
                     final StringWriter sw = new StringWriter();
                     final String msg = "Could not find SCM ref for " + gav + " in " + uri;
@@ -64,7 +65,7 @@ public class ReproducibleCentralScmLocator extends AbstractScmLocator {
                     try (PrintWriter pw = new PrintWriter(sw)) {
                         e.printStackTrace(pw);
                     }
-                    result.add(FqScmRef.createFailed(gav, uri, sw.toString()));
+                    result.add(FqScmRef.createFailed(gav.getVersion(), uri, sw.toString()));
                 }
             }
         }

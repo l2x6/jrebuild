@@ -17,6 +17,7 @@ import org.assertj.core.api.Assertions;
 import org.jboss.logging.Logger;
 import org.junit.jupiter.api.Test;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup.MutableRemoteScmLookup;
+import org.l2x6.jrebuild.api.scm.Result;
 import org.l2x6.jrebuild.api.scm.ScmRepository;
 import org.l2x6.jrebuild.core.dep.DependencyCollector;
 import org.l2x6.jrebuild.core.dep.DependencyCollectorRequest;
@@ -50,11 +51,12 @@ public class ScmRepositoryServiceTest {
                     context.lookup().lookup(CachingMavenModelReader.class).get()::readEffectiveModel,
                     new MutableRemoteScmLookup("git").put(
                             new ScmRepository("♢", "git", "https://github.com/l2x6/jrebuild-test"),
-                            Map.of("0.0.1", "deadbeef")),
+                            Result.success(Map.of("0.0.1", "deadbeef"))),
                     gitRepoCloneDir,
                     cacheDir,
                     Collections.emptyList(),
-                    Collections.emptyList());
+                    Collections.emptyList(),
+                    null);
             List<String> trees = DependencyCollector.collect(context, re)
                     .map(resolvedArtifact -> {
                         ScmInfoNode rootScmInfoNode = locator.newVisitor().walk(resolvedArtifact).rootNode();

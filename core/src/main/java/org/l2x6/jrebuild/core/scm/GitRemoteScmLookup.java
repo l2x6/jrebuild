@@ -34,8 +34,10 @@ import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.Ref;
 import org.jboss.logging.Logger;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
+import org.l2x6.jrebuild.api.scm.Result;
 import org.l2x6.jrebuild.api.scm.ScmRef.Kind;
 import org.l2x6.jrebuild.api.scm.ScmRepository;
+import org.l2x6.jrebuild.api.util.JrebuildUtils;
 
 public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
     private static final Logger log = Logger.getLogger(GitRemoteScmLookup.class);
@@ -60,18 +62,13 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
     }
 
     @Override
-    public String getRevision(ScmRepository url, Kind kind, String name) {
-        return getRefs(url, kind).get(name);
-    }
-
-    @Override
-    public Map<String, String> getRefs(ScmRepository url, Kind kind) {
+    public Result<Map<String, String>, String> getRefs(ScmRepository url, Kind kind) {
         if (kind != Kind.TAG) {
             throw new IllegalArgumentException("Looking up remote refs other than tags is unsupported");
         }
         final int timeout = 10;
         try {
-            return urisToTagsToRevisions.get(timeout, TimeUnit.SECONDS)
+            UrlEntry entry = urisToTagsToRevisions.get(timeout, TimeUnit.SECONDS)
                     .compute(url, (k, v) -> {
                         if (v == null || v.retrievalTime.isBefore(minRetrievalTime)) {
                             v = lsRemote(k);
@@ -79,7 +76,8 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
                             tasks.add(v);
                         }
                         return v;
-                    }).refs;
+                    });
+            return entry.toResult();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Could not retrieve urisToTagsToRevisions within " + timeout + " seconds", e);
@@ -103,6 +101,12 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
             tags = Git.lsRemoteRepository()
                     .setRemote(url.uri()).setTags(true).call();
         } catch (GitAPIException e) {
+            Throwable rootCause = JrebuildUtils.rootCause(e);
+            if (rootCause instanceof org.eclipse.jgit.errors.NoRemoteRepositoryException) {
+                return UrlEntry.failure(url, retrievalTime, "Repository not found: " + rootCause.getMessage());
+            } else if (rootCause instanceof org.eclipse.jgit.errors.TransportException) {
+                return UrlEntry.failure(url, retrievalTime, "Repository cannot be accessed: " + rootCause.getMessage());
+            }
             throw new RuntimeException("Failed to list of tags from " + url, e);
         }
         tagsToHash = new LinkedHashMap<>(tags.size());
@@ -112,9 +116,9 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
         }
         log.tracef("Loaded tags from %s: %s", url, tagsToHash);
         if (tagsToHash.isEmpty()) {
-            return new UrlEntry(url, retrievalTime, Collections.emptyMap());
+            return UrlEntry.success(url, retrievalTime, Collections.emptyMap());
         }
-        return new UrlEntry(url, retrievalTime, Collections.unmodifiableMap(tagsToHash));
+        return UrlEntry.success(url, retrievalTime, Collections.unmodifiableMap(tagsToHash));
     }
 
     void processQueue() {
@@ -161,6 +165,7 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
                 ScmRepository url = null;
                 Instant retrievalTime = null;
                 Map<String, String> val = null;
+                String failureMessage = null;
                 while (lines.hasNext()) {
                     final String line = lines.next();
                     if (line.isEmpty()) {
@@ -168,7 +173,12 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
                     } else if (!line.startsWith(" ")) {
                         /* URL line */
                         if (url != null) {
-                            result.put(url, new UrlEntry(url, retrievalTime, val));
+                            if (failureMessage != null) {
+                                val = null;
+                            }
+                            result.put(url, new UrlEntry(url, retrievalTime, val, failureMessage));
+                            failureMessage = null;
+                            val = null;
                         }
                         String[] entry = line.split(" ");
                         if (entry.length != 3) {
@@ -181,6 +191,8 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
                         url = new ScmRepository(entry[0], entry[1].substring(0, colonPos), entry[1].substring(colonPos + 1));
                         retrievalTime = Instant.parse(entry[2]);
                         val = new LinkedHashMap<>();
+                    } else if (!line.startsWith("=")) {
+                        failureMessage = line.substring(1);
                     } else {
                         String[] entry = line.split(" ");
                         if (entry.length != 3) {
@@ -192,7 +204,7 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
                     }
                 }
                 if (url != null) {
-                    result.put(url, new UrlEntry(url, retrievalTime, val));
+                    result.put(url, new UrlEntry(url, retrievalTime, val, failureMessage));
                 }
             } catch (IOException e) {
                 throw new RuntimeException("Could not read " + file, e);
@@ -284,17 +296,48 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
         }
     }
 
-    static record UrlEntry(ScmRepository url, Instant retrievalTime, Map<String, String> refs) {
+    static record UrlEntry(ScmRepository url, Instant retrievalTime, Map<String, String> refs, String failureMessage) {
+        UrlEntry(ScmRepository url, Instant retrievalTime, Map<String, String> refs, String failureMessage) {
+            if (failureMessage != null && refs != null) {
+                throw new IllegalStateException("Cannot set both result and failure");
+            }
+            this.url = url;
+            this.retrievalTime = retrievalTime;
+            this.refs = refs;
+            this.failureMessage = failureMessage;
+        }
+
+        static UrlEntry success(ScmRepository url, Instant retrievalTime, Map<String, String> refs) {
+            return new UrlEntry(url, retrievalTime, refs, null);
+        }
+
+        static UrlEntry failure(ScmRepository url, Instant retrievalTime, String failureMessage) {
+            return new UrlEntry(url, retrievalTime, null, failureMessage);
+        }
+
+        public Result<Map<String, String>, String> toResult() {
+            return new Result<Map<String, String>, String>(refs, failureMessage);
+        }
+
         public void append(Appendable out) throws IOException {
             out.append(url.toString()).append(' ').append(retrievalTime.toString()).append('\n');
-            refs.forEach((kk, vv) -> {
-                try {
-                    out.append(' ').append(kk).append(' ').append(vv).append('\n');
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
+            if (failureMessage != null) {
+                out.append('=').append(failureMessage).append('\n');
+            }
+            if (refs != null) {
+                refs.forEach((kk, vv) -> {
+                    try {
+                        out.append(' ').append(kk).append(' ').append(vv).append('\n');
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                });
+            }
             out.append('\n');
+        }
+
+        public boolean isFailure() {
+            return failureMessage != null;
         }
 
     }

@@ -37,14 +37,14 @@ public class GitRemoteScmLookupTest {
         /* store some non-empty items */
         final Instant outdatedRetrievalTime = minRetrievalTime.minus(2, ChronoUnit.SECONDS);
         final Instant futureRetrievalTime = minRetrievalTime.plus(2, ChronoUnit.SECONDS);
-        GitRemoteScmLookup.store(file, new UrlEntry(scmRepo("empty"), futureRetrievalTime, Collections.emptyMap()));
+        GitRemoteScmLookup.store(file, UrlEntry.success(scmRepo("empty"), futureRetrievalTime, Collections.emptyMap()));
         final Map<String, String> fooMap = Map.of("k1", "v1", "k2", "v2");
-        GitRemoteScmLookup.store(file, new UrlEntry(scmRepo("foo"), futureRetrievalTime, fooMap));
+        GitRemoteScmLookup.store(file, UrlEntry.success(scmRepo("foo"), futureRetrievalTime, fooMap));
         final Map<String, String> fooBarMap = Map.of("fb1", "fbv1", "fb2", "fbv2");
-        GitRemoteScmLookup.store(file, new UrlEntry(scmRepo("bar"), minRetrievalTime, fooBarMap));
+        GitRemoteScmLookup.store(file, UrlEntry.success(scmRepo("bar"), minRetrievalTime, fooBarMap));
 
         final Map<String, String> outdatedMap = Map.of("old", "outdated");
-        GitRemoteScmLookup.store(file, new UrlEntry(scmRepo("outdated"), outdatedRetrievalTime, outdatedMap));
+        GitRemoteScmLookup.store(file, UrlEntry.success(scmRepo("outdated"), outdatedRetrievalTime, outdatedMap));
 
         Runnable check = () -> {
             final Map<ScmRepository, UrlEntry> map = GitRemoteScmLookup.load(file);
@@ -85,11 +85,11 @@ public class GitRemoteScmLookupTest {
 
                     @Override
                     UrlEntry lsRemote(ScmRepository url) {
-                        return new UrlEntry(url, futureRetrievalTime, updatedMap);
+                        return UrlEntry.success(url, futureRetrievalTime, updatedMap);
                     }
 
                 };
-                Map<String, String> refs = remoteScm.getRefs(scmRepo("outdated"), Kind.TAG);
+                Map<String, String> refs = remoteScm.getRefs(scmRepo("outdated"), Kind.TAG).result();
                 Assertions.assertThat(refs).isEqualTo(updatedMap);
             } finally {
                 if (remoteScm != null) {

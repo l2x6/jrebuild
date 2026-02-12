@@ -23,7 +23,9 @@ import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import org.jboss.logging.Logger;
+import org.l2x6.jrebuild.api.scm.FqScmRef;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
+import org.l2x6.jrebuild.core.build.BuildGroup;
 import org.l2x6.jrebuild.core.dep.DependencyCollector;
 import org.l2x6.jrebuild.core.dep.DependencyCollectorRequest;
 import org.l2x6.jrebuild.core.dep.DependencyCollectorRequest.Builder;
@@ -135,6 +137,9 @@ public class AnalyzeCommand implements Runnable {
             split = ",")
     Set<String> reproducibleCentralUrls = Set.of();
 
+    @CommandLine.Option(names = { "--pnc-base-url" }, description = "The base URL of PNC build service")
+    String pncBaseUri;
+
     @CommandLine.Option(names = {
             "--ls-remotes-older-than" }, description = """
                     A timestamp in 2025-12-01T10:15:30Z format determining how fresh the entries in ls-remotes-cache must be.
@@ -215,10 +220,11 @@ public class AnalyzeCommand implements Runnable {
                         dominoCloneDir,
                         cacheDir,
                         reproducibleCentralUrls,
-                        dominoRecipeUrls);
+                        dominoRecipeUrls,
+                        pncBaseUri);
 
                 //final Collection<ScmInfoNode> dependencyTrees =
-                DependencyCollector.collect(context, re)
+                List<ScmInfoNode> roots = DependencyCollector.collect(context, re)
 
                         .onItem()
                         .transformToMulti(resolvedArtifact -> new CutStemVisitor(stem).walk(resolvedArtifact).result())
@@ -246,7 +252,14 @@ public class AnalyzeCommand implements Runnable {
                         .await().indefinitely();
                 ;
 
-                //final Forest<ScmInfoNode> forest = new Forest<ScmInfoNode>(dependencyTrees);
+                final ScmInfoNode.Builder forest = ScmInfoNode
+                        .builder(new BuildGroup.Builder(FqScmRef.createUnknown(Gav.of("root:root:0.0.0"))));
+                for (ScmInfoNode root : roots) {
+                    log.infof("Merging " + root);
+                    forest.adopt(root.builder());
+                }
+                ScmInfoNode result = forest.build();
+                log.infof("Final tree:\n\n %s", PrintVisitor.<ScmInfoNode> stringBuilderPrintVisitor().walk(result).toString());
             }
         }
     }

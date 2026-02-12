@@ -11,7 +11,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.maven.model.Model;
 import org.jboss.logging.Logger;
 import org.l2x6.jrebuild.api.scm.FqScmRef;
@@ -28,6 +28,7 @@ import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
 import org.l2x6.jrebuild.api.scm.ScmLocator;
 import org.l2x6.jrebuild.api.scm.ScmRepository;
 import org.l2x6.jrebuild.api.util.Ebnfizer;
+import org.l2x6.jrebuild.api.util.IndexedCollection;
 import org.l2x6.jrebuild.api.util.JrebuildUtils;
 import org.l2x6.jrebuild.core.build.BuildGroup;
 import org.l2x6.jrebuild.core.dep.ResolvedArtifactNode;
@@ -35,6 +36,7 @@ import org.l2x6.jrebuild.core.scm.ScmRepositoryService.ScmInfoNode.Builder;
 import org.l2x6.jrebuild.core.tree.Node;
 import org.l2x6.jrebuild.core.tree.Visitor;
 import org.l2x6.jrebuild.domino.scm.DominoBuildRecipesScmLocator;
+import org.l2x6.jrebuild.pnc.PncScmLocator;
 import org.l2x6.jrebuild.reproducible.central.ReproducibleCentralScmLocator;
 import org.l2x6.pom.tuner.model.Gav;
 import org.l2x6.pom.tuner.model.Gavtc;
@@ -50,11 +52,17 @@ public class ScmRepositoryService {
             Path cloneDirectory,
             Path cacheDir,
             Collection<String> reproducibleCentralGitRepositories,
-            Collection<String> dominoRecipeUrls) {
-        return new ScmRepositoryService(List.of(
+            Collection<String> dominoRecipeUrls,
+            String pncBaseUri) {
+        List<ScmLocator> locators = Stream.of(
                 new ReproducibleCentralScmLocator(cloneDirectory, cacheDir, reproducibleCentralGitRepositories, remoteScm),
                 new DominoBuildRecipesScmLocator(cloneDirectory, dominoRecipeUrls, remoteScm),
-                new PomScmLocator(getEffectiveModel, remoteScm)));
+                new PomScmLocator(getEffectiveModel, remoteScm),
+                pncBaseUri == null ? null : new PncScmLocator(cacheDir, pncBaseUri, remoteScm))
+                .filter(loc -> loc != null)
+                .map(loc -> (ScmLocator) loc)
+                .toList();
+        return new ScmRepositoryService(locators);
     }
 
     ScmRepositoryService(List<ScmLocator> scmLocators) {
@@ -98,7 +106,7 @@ public class ScmRepositoryService {
                 final String msg = failureMessages.toString();
                 log.warn(msg);
                 return FqScmRef.createFailed(
-                        gav,
+                        gav.getVersion(),
                         ScmRepository.createFailed(failures.stream().map(FqScmRef::repository).toList()),
                         shortMessage);
             }
@@ -170,8 +178,16 @@ public class ScmRepositoryService {
             this.hashCode = 31 * buildGroup.hashCode() + children.hashCode();
         }
 
-        public static Builder builder(BuildGroup.Builder gavScmInfo) {
-            return new Builder(gavScmInfo);
+        public static Builder builder(BuildGroup.Builder buildGroup) {
+            return new Builder(buildGroup);
+        }
+
+        public Builder builder() {
+            Builder result = new Builder(buildGroup.builder());
+            for (ScmInfoNode ch : children) {
+                result.children.add(ch.builder());
+            }
+            return result;
         }
 
         public BuildGroup buildGroup() {
@@ -204,9 +220,10 @@ public class ScmRepositoryService {
             return buildGroup.toString();
         }
 
-        public static class Builder {
+        public static class Builder implements Node<Builder> {
             private final BuildGroup.Builder buildGroup;
-            private Map<FqScmRef, Builder> children = new LinkedHashMap<>();
+            private IndexedCollection<FqScmRef, Builder> children = IndexedCollection.linked(b -> b.buildGroup.scmRef(),
+                    (Builder b1, Builder b2) -> b1.merge(b2));
 
             public Builder(BuildGroup.Builder buildGroup) {
                 this.buildGroup = Objects.requireNonNull(buildGroup);
@@ -217,12 +234,18 @@ public class ScmRepositoryService {
             }
 
             public ScmInfoNode build() {
-                final Set<ScmInfoNode> set = children.values().stream()
+                final Set<ScmInfoNode> set = children.stream()
                         .map(Builder::build)
                         .collect(Collectors.toCollection(LinkedHashSet::new));
                 return new ScmInfoNode(
                         buildGroup.build(),
                         Collections.unmodifiableSet(set));
+            }
+
+            @Override
+            public Builder merge(Builder other) {
+                buildGroup.artifacts(other.buildGroup.artifacts());
+                return this;
             }
 
             @Override
@@ -245,6 +268,11 @@ public class ScmRepositoryService {
             @Override
             public String toString() {
                 return buildGroup.toString();
+            }
+
+            @Override
+            public Collection<Builder> children() {
+                return children;
             }
 
         }

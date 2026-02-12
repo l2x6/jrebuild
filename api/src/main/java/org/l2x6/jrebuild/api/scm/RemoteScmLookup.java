@@ -12,9 +12,21 @@ import org.l2x6.jrebuild.api.scm.ScmRef.Kind;
 public interface RemoteScmLookup {
     String type();
 
-    String getRevision(ScmRepository url, ScmRef.Kind kind, String name);
+    /**
+     * Get the revision ID (sha for git) for the given reference (typically a tag)
+     *
+     * @param  url  the SCM repository where to look for the given tag
+     * @param  kind kinf of reference, typically a {@link Kind#TAG}
+     * @param  name name of the reference, typically the tag name
+     * @return      a revision ID (sha for git) or {@code null} if the given reference does not exist in the given SCM
+     *              repository
+     */
+    default Result<String, String> getRevision(ScmRepository url, ScmRef.Kind kind, String name) {
+        return getRefs(url, kind).mapResult(r -> r.get(name))
+                .verify(r -> (r.result() == null) ? Result.failure("No such " + kind + " " + name + " in " + url) : r);
+    }
 
-    Map<String, String> getRefs(ScmRepository url, ScmRef.Kind kind);
+    Result<Map<String, String>, String> getRefs(ScmRepository url, ScmRef.Kind kind);
 
     static class AggregateRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
 
@@ -42,21 +54,12 @@ public interface RemoteScmLookup {
         }
 
         @Override
-        public String getRevision(ScmRepository url, Kind kind, String name) {
-            return lookup(url).getRefs(url, kind).get(name);
-        }
-
-        private RemoteScmLookup lookup(ScmRepository url) {
+        public Result<Map<String, String>, String> getRefs(ScmRepository url, Kind kind) {
             RemoteScmLookup result = lookups.get(url.type());
             if (result == null) {
-                throw new IllegalArgumentException("Cannot lookup refs for SCM type '" + url.type() + "' in " + url);
+                return Result.failure("SCM type '" + url.type() + "' unsupported: " + url);
             }
-            return result;
-        }
-
-        @Override
-        public Map<String, String> getRefs(ScmRepository url, Kind kind) {
-            return lookup(url).getRefs(url, kind);
+            return result.getRefs(url, kind);
         }
 
         @Override
@@ -68,7 +71,7 @@ public interface RemoteScmLookup {
 
     static class MutableRemoteScmLookup implements RemoteScmLookup {
 
-        private final Map<ScmRepository, Map<String, String>> entries = new LinkedHashMap<>();
+        private final Map<ScmRepository, Result<Map<String, String>, String>> entries = new LinkedHashMap<>();
 
         private final String type;
 
@@ -77,19 +80,14 @@ public interface RemoteScmLookup {
             this.type = type;
         }
 
-        public MutableRemoteScmLookup put(ScmRepository url, Map<String, String> tags) {
+        public MutableRemoteScmLookup put(ScmRepository url, Result<Map<String, String>, String> tags) {
             entries.put(url, tags);
             return this;
         }
 
         @Override
-        public String getRevision(ScmRepository url, Kind kind, String name) {
-            return getRefs(url, kind).get(name);
-        }
-
-        @Override
-        public Map<String, String> getRefs(ScmRepository url, Kind kind) {
-            return entries.computeIfAbsent(url, k -> Collections.emptyMap());
+        public Result<Map<String, String>, String> getRefs(ScmRepository url, Kind kind) {
+            return entries.computeIfAbsent(url, k -> Result.success(Collections.emptyMap()));
         }
 
         @Override

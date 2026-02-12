@@ -4,6 +4,7 @@
  */
 package org.l2x6.jrebuild.core.build;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
@@ -167,6 +168,10 @@ public class BuildGroup {
         @Override
         public String toString() {
             return BuildGroup.append(new StringBuilder(), scmRef, artifacts).toString();
+        }
+
+        public Collection<Gavtc> artifacts() {
+            return new ArrayList<>(artifacts);
         }
 
     }

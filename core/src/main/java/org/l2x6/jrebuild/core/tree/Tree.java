@@ -4,29 +4,18 @@
  */
 package org.l2x6.jrebuild.core.tree;
 
-import java.util.Objects;
+import java.util.ArrayList;
+import java.util.List;
 
-public record Tree<T extends Node<T>>(T rootNode) {
+public record Tree<T extends Node<T>>(List<T> rootNodes) {
 
-    public Tree(T rootNode) {
-        this.rootNode = Objects.requireNonNull(rootNode);
-    }
+    public static class Builder<T extends Node<T>> {
+        private final List<T> children = new ArrayList<>();
 
-    @Override
-    public int hashCode() {
-        return rootNode.hashCode();
-    }
+        public Tree<T> build() {
+            return new Tree<>(children);
+        }
 
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj)
-            return true;
-        if (obj == null)
-            return false;
-        if (getClass() != obj.getClass())
-            return false;
-        Tree<T> other = (Tree<T>) obj;
-        return rootNode.equals(other.rootNode);
     }
 
 }

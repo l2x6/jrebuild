@@ -22,6 +22,7 @@ import org.apache.maven.model.Scm;
 import org.jboss.logging.Logger;
 import org.l2x6.jrebuild.api.scm.FqScmRef;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
+import org.l2x6.jrebuild.api.scm.Result;
 import org.l2x6.jrebuild.api.scm.ScmRef;
 import org.l2x6.jrebuild.api.scm.ScmRef.Kind;
 import org.l2x6.jrebuild.api.scm.ScmRepository;
@@ -33,6 +34,7 @@ public class PomScmLocator extends AbstractScmLocator {
     private static final String SOURCE = "♢";
     private static final String HTTPS_GITHUB_COM = "https://github.com/";
     private static final Pattern SCM_TYPE_PATTERN = Pattern.compile("^scm\\:([^\\|\\:]+)[\\|\\:](.*)$");
+    private static final String SSH_GITHUB_COM = "ssh://git@github.com/";
     private final Function<Gav, Model> getEffectiveModel;
 
     public PomScmLocator(Function<Gav, Model> getEffectiveModel, RemoteScmLookup scmLookup) {
@@ -91,22 +93,19 @@ public class PomScmLocator extends AbstractScmLocator {
         Objects.requireNonNull(uri, "repository cannot be null");
         try {
             if (tag == null || "HEAD".equals(tag)) {
-                final Map<String, String> tagsToHash = scmLookup.getRefs(uri, Kind.TAG);
-                final ScmRef ref = guessTag(uri, gav, tagsToHash);
+                final Result<Map<String, String>, String> tagsToHash = scmLookup.getRefs(uri, Kind.TAG);
+                if (tagsToHash.isFailure()) {
+                    return FqScmRef.createFailed(gav.getVersion(), uri, tagsToHash.failure());
+                }
+                final ScmRef ref = guessTag(uri, gav, tagsToHash.result());
                 if (ref != null) {
                     return new FqScmRef(ref, uri);
                 } else {
                     final String msg = "Could not guess SCM ref for generic tag name " + tag + " of " + gav + " in " + uri;
-                    return FqScmRef.createFailed(gav, uri, msg);
+                    return FqScmRef.createFailed(gav.getVersion(), uri, msg);
                 }
             }
-            final ScmRef ref = validateTag(uri, tag, gav.getVersion());
-            if (ref == null) {
-                final String msg = "Could not find SCM revision for tag " + tag + " declared in the POM of " + gav + " in "
-                        + uri;
-                return FqScmRef.createFailed(gav, uri, msg);
-            }
-            return new FqScmRef(ref, uri);
+            return validateTag(uri, tag, gav.getVersion());
         } catch (Exception e) {
             final StringWriter sw = new StringWriter();
             final String msg = "Could not find SCM ref for " + gav + " in " + uri;
@@ -114,11 +113,15 @@ public class PomScmLocator extends AbstractScmLocator {
             try (PrintWriter pw = new PrintWriter(sw)) {
                 e.printStackTrace(pw);
             }
-            return FqScmRef.createFailed(gav, uri, sw.toString());
+            return FqScmRef.createFailed(gav.getVersion(), uri, sw.toString());
         }
     }
 
     protected static String normalizeScmUri(String s) {
+        if (s.startsWith(SSH_GITHUB_COM)) {
+            s = HTTPS_GITHUB_COM + s.substring(SSH_GITHUB_COM.length());
+        }
+
         s = s.replace("scm:", "");
         s = s.replace("git:", "");
         s = s.replace("git@", "");
