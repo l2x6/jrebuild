@@ -7,7 +7,6 @@ package org.l2x6.jrebuild.cli;
 import eu.maveniverse.maven.mima.context.Context;
 import eu.maveniverse.maven.mima.context.ContextOverrides;
 import eu.maveniverse.maven.mima.context.Runtime;
-import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.infrastructure.Infrastructure;
 import java.io.IOException;
@@ -18,7 +17,6 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
@@ -36,8 +34,8 @@ import org.l2x6.jrebuild.core.mima.internal.CachingMavenModelReader;
 import org.l2x6.jrebuild.core.scm.GitRemoteScmLookup;
 import org.l2x6.jrebuild.core.scm.ScmRepositoryService;
 import org.l2x6.jrebuild.core.scm.ScmRepositoryService.ScmInfoNode;
+import org.l2x6.jrebuild.core.tree.CutStemVisitor;
 import org.l2x6.jrebuild.core.tree.PrintVisitor;
-import org.l2x6.jrebuild.core.tree.Visitor;
 import org.l2x6.pom.tuner.model.Gav;
 import org.l2x6.pom.tuner.model.GavSet;
 import org.l2x6.pom.tuner.model.Gavtc;
@@ -227,7 +225,8 @@ public class AnalyzeCommand implements Runnable {
                 List<ScmInfoNode> roots = DependencyCollector.collect(context, re)
 
                         .onItem()
-                        .transformToMulti(resolvedArtifact -> new CutStemVisitor(stem).walk(resolvedArtifact).result())
+                        .transformToMulti(
+                                resolvedArtifact -> cutStemVisitor(stem).walk(resolvedArtifact).result())
                         .merge()
 
                         // .onItem().invoke(resolvedArtifact -> log.infof("Resolved:\n%s", PrintVisitor.toString(resolvedArtifact)))
@@ -262,11 +261,6 @@ public class AnalyzeCommand implements Runnable {
                 log.infof("Final tree:\n\n %s", PrintVisitor.<ScmInfoNode> stringBuilderPrintVisitor().walk(result).toString());
             }
         }
-    }
-
-    private List<ScmInfoNode> merge(List<ScmInfoNode> dependencyGraphs) {
-        // TODO Auto-generated method stub
-        return null;
     }
 
     static Path resolveHome(Path userHome, Path path) {
@@ -326,35 +320,9 @@ public class AnalyzeCommand implements Runnable {
         return result;
     }
 
-    static class CutStemVisitor implements Visitor<ResolvedArtifactNode, CutStemVisitor> {
-
-        private final Set<ResolvedArtifactNode> stemComplement = new LinkedHashSet<>();
-        private final GavSet stem;
-
-        public CutStemVisitor(GavSet stem) {
-            super();
-            this.stem = stem;
-        }
-
-        public Multi<ResolvedArtifactNode> result() {
-            return Multi.createFrom().iterable(stemComplement);
-        }
-
-        @Override
-        public boolean enter(ResolvedArtifactNode node) {
-            if (stem.contains(node.gavtc().toGav())) {
-                return true;
-            } else {
-                stemComplement.add(node);
-                return false;
-            }
-        }
-
-        @Override
-        public boolean leave(ResolvedArtifactNode node) {
-            return true;
-        }
-
+    public static <THIS extends CutStemVisitor<ResolvedArtifactNode, THIS>> CutStemVisitor<ResolvedArtifactNode, THIS> cutStemVisitor(
+            GavSet stem) {
+        return new CutStemVisitor<>(node -> stem.contains(node.gavtc().toGav()));
     }
 
     static class GavConverter implements ITypeConverter<Gav> {
