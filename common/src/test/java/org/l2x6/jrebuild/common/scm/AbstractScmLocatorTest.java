@@ -19,14 +19,17 @@ public class AbstractScmLocatorTest {
                 .map(f -> f.apply(repo, Gav.of("foo:foo-core:1.2.3")))
                 .toList();
 
-        Assertions.assertThat(tags).containsExactly("1.2.3",
+        Assertions.assertThat(tags).containsExactly(
+                "1.2.3",
                 "foo-core-1.2.3",
                 "quarkus-1.2.3",
                 "v1.2.3",
                 "v_1.2.3",
                 "r1.2.3",
+                "V1_2_3",
                 "rel/1.2.3",
                 "rel/foo-core-1.2.3",
+                "rel/quarkus-1.2.3",
                 "QUARKUS_1_2_3",
                 "QUARKUS-1_2_3");
     }

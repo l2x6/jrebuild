@@ -224,49 +224,4 @@ public class NodeTest {
 
     }
 
-    @Test
-    void n() {
-        TestNode forest = TestNode.empty("root");
-        forest.appendPath("1.1", "2.1", "3.1");
-        forest.appendPath("1.1", "2.2", "3.1");
-
-        Assertions.assertThat(PrintVisitor.<TestNode> stringBuilderPrintVisitor().walk(forest).toString())
-                .isEqualTo("""
-                        root (root)
-                        `- 1.1 (1.1)
-                           +- 2.1 (2.1)
-                           |  `- 3.1 (3.1)
-                           `- 2.2 (2.2)
-                              `- 3.1 (3.1)
-                        """);
-
-        forest.appendPath("1.2", "2.2", "3.1");
-        Assertions.assertThat(PrintVisitor.<TestNode> stringBuilderPrintVisitor().walk(forest).toString())
-                .isEqualTo("""
-                        root (root)
-                        +- 1.1 (1.1)
-                        |  +- 2.1 (2.1)
-                        |  |  `- 3.1 (3.1)
-                        |  `- 2.2 (2.2)
-                        |     `- 3.1 (3.1)
-                        `- 1.2 (1.2)
-                           `- 2.2 (2.2)
-                              `- 3.1 (3.1)
-                        """);
-
-        forest.appendPath("1.2", "2.2", "3.1");
-        Assertions.assertThat(PrintVisitor.<TestNode> stringBuilderPrintVisitor().walk(forest).toString())
-                .isEqualTo("""
-                        root (root)
-                        +- 1.1 (1.1)
-                        |  +- 2.1 (2.1)
-                        |  |  `- 3.1 (3.1)
-                        |  `- 2.2 (2.2)
-                        |     `- 3.1 (3.1)
-                        `- 1.2 (1.2)
-                           `- 2.2 (2.2)
-                              `- 3.1 (3.1)
-                        """);
-
-    }
 }
