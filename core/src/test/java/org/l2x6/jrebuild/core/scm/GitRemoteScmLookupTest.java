@@ -46,9 +46,11 @@ public class GitRemoteScmLookupTest {
         final Map<String, String> outdatedMap = Map.of("old", "outdated");
         GitRemoteScmLookup.store(file, UrlEntry.success(scmRepo("outdated"), outdatedRetrievalTime, outdatedMap));
 
+        GitRemoteScmLookup.store(file, UrlEntry.failure(scmRepo("failed-repo"), outdatedRetrievalTime, "Failure message"));
+
         Runnable check = () -> {
             final Map<ScmRepository, UrlEntry> map = GitRemoteScmLookup.load(file);
-            assertThat(map).hasSize(4);
+            assertThat(map).hasSize(5);
             assertThat(map.get(scmRepo("empty")).refs()).isEmpty();
             assertThat(map.get(scmRepo("empty")).retrievalTime()).isEqualTo(futureRetrievalTime);
             assertThat(map.get(scmRepo("foo")).refs()).isEqualTo(fooMap);
@@ -58,6 +60,10 @@ public class GitRemoteScmLookupTest {
 
             assertThat(map.get(scmRepo("outdated")).refs()).isEqualTo(outdatedMap);
             assertThat(map.get(scmRepo("outdated")).retrievalTime()).isEqualTo(outdatedRetrievalTime);
+
+            assertThat(map.get(scmRepo("failed-repo")).retrievalTime()).isEqualTo(outdatedRetrievalTime);
+            assertThat(map.get(scmRepo("failed-repo")).refs()).isNull();
+            assertThat(map.get(scmRepo("failed-repo")).failureMessage()).isEqualTo("Failure message");
         };
         check.run();
 
@@ -100,7 +106,7 @@ public class GitRemoteScmLookupTest {
                 /* await termination */
             }
             final Map<ScmRepository, UrlEntry> map = GitRemoteScmLookup.load(file);
-            assertThat(map).hasSize(4);
+            assertThat(map).hasSize(5);
             assertThat(map.get(scmRepo("empty")).refs()).isEmpty();
             assertThat(map.get(scmRepo("empty")).retrievalTime()).isEqualTo(futureRetrievalTime);
             assertThat(map.get(scmRepo("foo")).refs()).isEqualTo(fooMap);
@@ -110,6 +116,11 @@ public class GitRemoteScmLookupTest {
 
             assertThat(map.get(scmRepo("outdated")).refs()).isEqualTo(updatedMap);
             assertThat(map.get(scmRepo("outdated")).retrievalTime()).isEqualTo(futureRetrievalTime);
+
+            assertThat(map.get(scmRepo("failed-repo")).retrievalTime()).isEqualTo(outdatedRetrievalTime);
+            assertThat(map.get(scmRepo("failed-repo")).refs()).isNull();
+            assertThat(map.get(scmRepo("failed-repo")).failureMessage()).isEqualTo("Failure message");
+
         }
     }
 

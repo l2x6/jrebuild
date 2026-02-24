@@ -68,7 +68,7 @@ public class ScmRepositoryServiceTest {
             Assertions.assertThat(trees).containsExactly(
                     """
                             ✅♢ git:https://github.com/l2x6/jrebuild-test#0.0.1@deadbeef [org.l2x6.jrebuild.test-project:jrebuild-test-(api|impl|optional|project):0.0.1]
-                            `- 💣? failed:♢ git:https://github.com/l2x6/jrebuild-test-transitive[.git]#failed-for-version-0.0.1@null: Could not find SCM revision for tag 0.0.1 declared in the POM of org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1 in ♢ git:https://github.com/l2x6/jrebuild-test-transitive[.git] [org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1:jar]
+                            `- 💣? failed:♢ git:https://github.com/l2x6/jrebuild-test-transitive[.git]#failed-for-version-0.0.1@null: No such TAG 0.0.1 in ♢ git:https://github.com/l2x6/jrebuild-test-transitive[.git] [org.l2x6.jrebuild.test-transitive:jrebuild-test-transitive:0.0.1:jar]
                             """);
         }
     }

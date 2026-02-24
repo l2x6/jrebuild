@@ -170,7 +170,20 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
                     final String line = lines.next();
                     if (line.isEmpty()) {
                         continue;
-                    } else if (!line.startsWith(" ")) {
+                    } else if (line.startsWith("=")) {
+                        /* failureMessage line */
+                        failureMessage = line.substring(1);
+                    } else if (line.startsWith(" ")) {
+                        /* key value line */
+                        String[] entry = line.split(" ");
+                        if (entry.length != 3) {
+                            log.warn("Tag line '" + line + "' in " + file + " has " + entry.length
+                                    + " elements; expected: 3; ignoring the rest of file");
+                            return result;
+                        }
+                        val.put(entry[1], entry[2]);
+                    } else {
+
                         /* URL line */
                         if (url != null) {
                             if (failureMessage != null) {
@@ -191,19 +204,12 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
                         url = new ScmRepository(entry[0], entry[1].substring(0, colonPos), entry[1].substring(colonPos + 1));
                         retrievalTime = Instant.parse(entry[2]);
                         val = new LinkedHashMap<>();
-                    } else if (!line.startsWith("=")) {
-                        failureMessage = line.substring(1);
-                    } else {
-                        String[] entry = line.split(" ");
-                        if (entry.length != 3) {
-                            log.warn("Tag line '" + line + "' in " + file + " has " + entry.length
-                                    + " elements; expected: 3; ignoring the rest of file");
-                            return result;
-                        }
-                        val.put(entry[1], entry[2]);
                     }
                 }
                 if (url != null) {
+                    if (failureMessage != null) {
+                        val = null;
+                    }
                     result.put(url, new UrlEntry(url, retrievalTime, val, failureMessage));
                 }
             } catch (IOException e) {
