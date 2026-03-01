@@ -31,7 +31,6 @@ import org.l2x6.pom.tuner.model.Gav;
 public class PncScmLocator extends AbstractScmLocator {
     private static final Logger log = Logger.getLogger(PncScmLocator.class);
     private static final String SOURCE = "♖";
-    private final String pncBaseUri;
     private final ArtifactEndpointClient artifactEndpoint;
 
     public PncScmLocator(
@@ -39,7 +38,6 @@ public class PncScmLocator extends AbstractScmLocator {
             String pncBaseUri,
             RemoteScmLookup scmLookup) {
         super(scmLookup);
-        this.pncBaseUri = pncBaseUri;
         this.artifactEndpoint = QuarkusRestClientBuilder.newBuilder()
                 .baseUri(URI.create(pncBaseUri))
                 .build(ArtifactEndpointClient.class);
@@ -52,13 +50,16 @@ public class PncScmLocator extends AbstractScmLocator {
     public List<FqScmRef> locate(Gav gav) {
         List<FqScmRef> result = new ArrayList<>();
         Optional<ComparableArtifactInfo> latestBuiltArtifact = latestBuiltArtifact(gav);
-        log.debugf("Latest build artifact is %s", latestBuiltArtifact);
         if (latestBuiltArtifact.isPresent()) {
-            Artifact artifact = artifactEndpoint.getSpecific(latestBuiltArtifact.get().artifact.getId());
+            ArtifactInfo latestArtifactInfo = latestBuiltArtifact.get().artifact();
+            log.debugf("Latest build %s", latestArtifactInfo.getIdentifier());
+            Artifact artifact = artifactEndpoint.getSpecific(latestArtifactInfo.getId());
             Build build = artifact.getBuild();
-            if (build != null) {
-                ScmRepository repo = new ScmRepository(SOURCE, "git", build.getScmRepository().getExternalUrl());
+            String externalUrl;
+            if (build != null && (externalUrl = build.getScmRepository().getExternalUrl()) != null) {
+                ScmRepository repo = new ScmRepository(SOURCE, "git", externalUrl);
                 String tag = build.getBuildConfigRevision().getScmRevision();
+                log.debugf("Validating tag from PNC for %s: %s#%s", latestArtifactInfo.getIdentifier(), repo, tag);
                 FqScmRef ref = validateTag(repo, tag, gav.getVersion());
                 result.add(ref);
             }

@@ -28,6 +28,10 @@ public abstract class AbstractScmLocator implements ScmLocator {
     static final List<BiFunction<ScmRepository, Gav, String>> VERSION_TO_TAG_FORMATTERS = List.of(
             (repo, gav) -> gav.getVersion(),
             (repo, gav) -> gav.getArtifactId() + "-" + gav.getVersion(),
+            // seen in https://github.com/jvm-build-service-code/wsdl4j
+            (repo, gav) -> gav.getArtifactId() + "-" + gav.getVersion().replace('.', '_'),
+            // seen in https://github.com/jakartaee/servlet
+            (repo, gav) -> gav.getVersion() + "-RELEASE",
             (repo, gav) -> lastPathSegment(repo).map(gitRepoName -> gitRepoName + "-" + gav.getVersion()).orElse(null),
             (repo, gav) -> "v" + gav.getVersion(),
             (repo, gav) -> "v_" + gav.getVersion(),

@@ -91,9 +91,6 @@ public class GitRemoteScmLookup implements RemoteScmLookup, AutoCloseable {
     UrlEntry lsRemote(ScmRepository url) {
         log.debugf("Loading tag -> SHA1 mappings from %s", url);
 
-        if (url.uri().contains("fuse-components")) {
-            throw new RuntimeException(url.toString());
-        }
         Map<String, String> tagsToHash;
         final Collection<Ref> tags;
         final Instant retrievalTime = Instant.now();
