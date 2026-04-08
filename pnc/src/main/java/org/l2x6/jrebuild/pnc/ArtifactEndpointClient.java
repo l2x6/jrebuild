@@ -4,8 +4,6 @@
  */
 package org.l2x6.jrebuild.pnc;
 
-import jakarta.validation.Valid;
-import jakarta.ws.rs.BeanParam;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -20,7 +18,6 @@ import org.jboss.pnc.dto.response.Page;
 import org.jboss.pnc.enums.ArtifactQuality;
 import org.jboss.pnc.enums.BuildCategory;
 import org.jboss.pnc.enums.RepositoryType;
-import org.jboss.pnc.rest.api.parameters.PaginationParameters;
 
 @Path("/artifacts")
 @Produces(MediaType.APPLICATION_JSON)
@@ -48,7 +45,8 @@ public interface ArtifactEndpointClient {
     @GET
     @Path("/filter")
     Page<ArtifactInfo> getAllFiltered(
-            @Valid @BeanParam PaginationParameters paginationParameters,
+            @QueryParam("pageIndex") int pageIndex,
+            @QueryParam("pageSize") int pageSize,
             @QueryParam("identifier") String identifier,
             @QueryParam("qualities") Set<ArtifactQuality> qualities,
             @QueryParam("repoType") RepositoryType repoType,
@@ -64,6 +62,6 @@ public interface ArtifactEndpointClient {
      */
     @GET
     @Path("/{id}")
-    Artifact getSpecific(
-            @PathParam("id") String id);
+    Artifact getSpecific(@PathParam("id") String id);
+
 }
