@@ -48,4 +48,10 @@ public class AbstractScmLocatorTest {
                                 .get())
                 .isEqualTo("quarkus");
     }
+
+    @Test
+    void normalizeScmUri() {
+        Assertions.assertThat(AbstractScmLocator.normalizeScmUri("git@github.com:smallrye/smallrye-stork.git"))
+                .isEqualTo("https://github.com/smallrye/smallrye-stork.git");
+    }
 }
