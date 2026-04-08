@@ -45,79 +45,8 @@ import picocli.CommandLine;
 import picocli.CommandLine.ITypeConverter;
 
 @CommandLine.Command(name = "analyze")
-public class AnalyzeCommand implements Runnable {
+public class AnalyzeCommand extends AbstractRootArtifactsCommand implements Runnable {
     private static final Logger log = Logger.getLogger(AnalyzeCommand.class);
-
-    @CommandLine.Option(names = { "--project-dir" }, description = "A directory containing a source tree to analyze")
-    Path projectDir;
-
-    @CommandLine.Option(names = {
-            "--bom" },
-            description = "BOM in format groupId:artifactId:version whose constraints should be used as top level artifacts to be built",
-            converter = GavConverter.class)
-    Gav bom;
-
-    @CommandLine.Option(names = {
-            "--bom-includes" },
-            description = """
-                    A list of patterns in format groupId[:artifactId[:version[:type[:classifier]]]] where each segment may contain one or more * wildcards.
-                    These patterns are used for filtering the entries of the BOM (specified through --bom) and are added to the set of root artifacts.
-                    """,
-            converter = GavtcsPatternConverter.class, split = ",")
-    List<GavtcsPattern> bomIncludes = List.of(GavtcsPattern.matchAll());
-
-    @CommandLine.Option(names = {
-            "--excludes" },
-            description = """
-                    A list of patterns in format groupId[:artifactId[:version[:type[:classifier]]]] where each segment may contain one or more * wildcards.
-                    Artifacts matching any of these patterns are excluded from the set of root artifacts and if any of those artifacts is hit during
-                    the analysis then the artifact is ignored and the analysis won't descend to its dependencies.
-                    """,
-            converter = GavtcsPatternConverter.class, split = ",")
-    List<GavtcsPattern> excludes = List.of();
-
-    @CommandLine.Option(names = {
-            "--root-artifacts" },
-            description = """
-                    Root artifacts whose dependencies should be analyzed in format groupId:artifactId:version[:type[:classifier]].
-                    Note that root artifacts can also be specified via --bom, --bom-includes (and --excludes if needed).
-                    """,
-            converter = GavtcConverter.class, split = ",")
-    List<Gavtc> rootArtifacts = List.of();
-
-    @CommandLine.Option(names = {
-            "--include-optional-deps" }, description = """
-                    If true, all optional dependencies (both first level and transitive) of root artifacts will be processed;
-                    otherwise only the first level optionals will be processed
-                    """, defaultValue = "true", fallbackValue = "true")
-    boolean includeOptionalDeps;
-
-    @CommandLine.Option(names = {
-            "--include-parents-and-imports" },
-            description = "If true, process also parents and dependencyManagement imports as if they were dependencies; otherwise process only dependencies",
-            defaultValue = "true", fallbackValue = "true")
-    boolean includeParentsAndImports;
-
-    @CommandLine.Option(names = {
-            "--additional-boms" },
-            description = """
-                    A list of groupId:artifactId:version whose constraints should be enforced in addition to the main BOM specified through --bom.
-                    BOMs specified via --additional-boms do not extend the universe for --bom-includes.
-                    """,
-            converter = GavConverter.class, split = ",")
-    List<Gav> additionalBoms = List.of();
-
-    @CommandLine.Option(names = {
-            "--cut-stem" },
-            description = """
-                    A list of patterns in format groupId[:artifactId[:version[:type[:classifier]]]] where each segment may contain one or more * wildcards.
-                    After creating the initial dependency trees of all root artiafcts, these patterns are used for removing some
-                    (possibly empty) rooted part (i.e. stem) of those dependecy trees before searching for build metadata.
-                    This is typically useful when you want to analyze only dependencies of some project, but not the project itself.
-                    In such a situation, you would use --exclude-stem to exclude the artifacts belonging to that project.
-                    """,
-            converter = GavSetConverter.class)
-    GavSet stem = GavSet.excludeAll();
 
     @CommandLine.Option(names = {
             "--buildspec-clone-dir" },
@@ -151,26 +80,17 @@ public class AnalyzeCommand implements Runnable {
     String rawMinRetievalTime;
     Instant minRetievalTime;
 
-    @CommandLine.Option(names = {
-            "--cache-dir" },
-            description = """
-                    A directory under which various cache and index files are stored, such as ls-remotes-cache.txt - the tag name -> sha1 mappings are cached for remote SCM repositories
-                    """,
-            defaultValue = "~/.cache/jrebuild")
-    Path cacheDir;
-
     public AnalyzeCommand() {
     }
 
     @Override
     public void run() {
 
-        final Path userHome = Path.of(System.getProperty("user.home"));
-        dominoCloneDir = resolveHome(userHome, dominoCloneDir);
-        cacheDir = resolveHome(userHome, cacheDir);
+        final Path cacheDir = cacheDir();
+
+        dominoCloneDir = resolveHome(dominoCloneDir);
         final Path lsRemotesCache = cacheDir.resolve("ls-remotes-cache.txt");
 
-        final Path cacheDir = userHome.resolve(".cache/jrebuild");
         if (rawMinRetievalTime == null) {
             minRetievalTime = defaultMinRetrievalTime(cacheDir);
         } else if ("now".equals(rawMinRetievalTime)) {
@@ -184,7 +104,7 @@ public class AnalyzeCommand implements Runnable {
         try (Context context = runtime.create(overrides.build())) {
 
             final Builder builder = DependencyCollectorRequest.builder()
-                    .projectDirectory(projectDir)
+                    .projectDirectory(projectDir())
                     .includeOptionalDependencies(includeOptionalDeps)
                     .includeParentsAndImports(includeParentsAndImports)
                     .additionalBoms(additionalBoms)
@@ -261,13 +181,6 @@ public class AnalyzeCommand implements Runnable {
                 log.infof("Final tree:\n\n %s", PrintVisitor.<ScmInfoNode> stringBuilderPrintVisitor().walk(result).toString());
             }
         }
-    }
-
-    static Path resolveHome(Path userHome, Path path) {
-        if (path.startsWith("~")) {
-            return userHome.resolve(path.subpath(1, path.getNameCount()));
-        }
-        return path;
     }
 
     static Instant defaultMinRetrievalTime(Path cacheDir) {
