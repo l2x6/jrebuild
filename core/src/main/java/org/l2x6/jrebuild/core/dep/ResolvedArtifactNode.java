@@ -35,6 +35,10 @@ public class ResolvedArtifactNode implements Comparable<ResolvedArtifactNode>, N
         return gavtc;
     }
 
+    public DependencyAxis axis() {
+        return axis;
+    }
+
     @Override
     public List<ResolvedArtifactNode> children() {
         return children;

@@ -5,6 +5,7 @@
 package org.l2x6.jrebuild.core.scm;
 
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -51,14 +52,17 @@ public class ScmRepositoryService {
             RemoteScmLookup remoteScm,
             Path cloneDirectory,
             Path cacheDir,
+            Instant maxPncBuildDate,
             Collection<String> reproducibleCentralGitRepositories,
             Collection<String> dominoRecipeUrls,
-            String pncBaseUri) {
+            String pncBaseUri,
+            boolean pncIncludeTemporary) {
         List<ScmLocator> locators = Stream.of(
                 new ReproducibleCentralScmLocator(cloneDirectory, cacheDir, reproducibleCentralGitRepositories, remoteScm),
                 new DominoBuildRecipesScmLocator(cloneDirectory, dominoRecipeUrls, remoteScm),
                 new PomScmLocator(getEffectiveModel, remoteScm),
-                pncBaseUri == null ? null : new PncScmLocator(cacheDir, pncBaseUri, remoteScm))
+                pncBaseUri == null ? null
+                        : new PncScmLocator(cacheDir, maxPncBuildDate, pncBaseUri, pncIncludeTemporary, remoteScm))
                 .filter(loc -> loc != null)
                 .map(loc -> (ScmLocator) loc)
                 .toList();
