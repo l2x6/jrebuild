@@ -4,23 +4,22 @@
  */
 package org.l2x6.jrebuild.cli;
 
-import java.nio.file.Path;
+import eu.maveniverse.maven.mima.context.Context;
 import java.util.List;
-import org.l2x6.jrebuild.cli.AnalyzeCommand.GavConverter;
-import org.l2x6.jrebuild.cli.AnalyzeCommand.GavSetConverter;
-import org.l2x6.jrebuild.cli.AnalyzeCommand.GavtcConverter;
-import org.l2x6.jrebuild.cli.AnalyzeCommand.GavtcsPatternConverter;
+import java.util.Set;
+import org.l2x6.jrebuild.core.dep.DependencyCollectorRequest;
+import org.l2x6.jrebuild.core.dep.DependencyCollectorRequest.Builder;
+import org.l2x6.jrebuild.core.dep.ManagedGavsSelector;
+import org.l2x6.jrebuild.core.mima.internal.CachingMavenModelReader;
 import org.l2x6.pom.tuner.model.Gav;
 import org.l2x6.pom.tuner.model.GavSet;
 import org.l2x6.pom.tuner.model.Gavtc;
 import org.l2x6.pom.tuner.model.GavtcsPattern;
+import org.l2x6.pom.tuner.model.GavtcsSet;
 import picocli.CommandLine;
+import picocli.CommandLine.ITypeConverter;
 
-public class AbstractRootArtifactsCommand {
-    @CommandLine.Option(names = { "--project-dir" }, description = "A directory containing a source tree to analyze")
-    private Path projectDir;
-    private volatile Path projectDirResolved;
-
+public class RootArtifactsOptions extends BaseOptions {
     @CommandLine.Option(names = {
             "--bom" },
             description = "BOM in format groupId:artifactId:version whose constraints should be used as top level artifacts to be built",
@@ -89,45 +88,57 @@ public class AbstractRootArtifactsCommand {
             converter = GavSetConverter.class)
     protected GavSet stem = GavSet.excludeAll();
 
-    @CommandLine.Option(names = {
-            "--cache-dir" },
-            description = """
-                    A directory under which various cache and index files are stored, such as ls-remotes-cache.txt - the tag name -> sha1 mappings are cached for remote SCM repositories.
-                    """,
-            defaultValue = "~/.cache/jrebuild")
-    private Path cacheDir;
-    private volatile Path cacheDirResolved;
-    private volatile Path userHome;
-
-    protected Path projectDir() {
-        Path result;
-        if ((result = projectDirResolved) == null) {
-            result = projectDirResolved = resolveHome(projectDir);
+    protected DependencyCollectorRequest dependencyCollectorRequest(Context context) {
+        final Builder builder = DependencyCollectorRequest.builder()
+                .projectDirectory(projectDir())
+                .includeOptionalDependencies(includeOptionalDeps)
+                .includeParentsAndImports(includeParentsAndImports)
+                .additionalBoms(additionalBoms)
+                .rootArtifacts(rootArtifacts);
+        if (bom != null) {
+            final GavtcsSet gavtcsSet = GavtcsSet.builder()
+                    .includePatterns(bomIncludes)
+                    .excludePatterns(excludes)
+                    .build();
+            final Set<Gavtc> bomRootArtifacts = new ManagedGavsSelector(
+                    context.lookup().lookup(CachingMavenModelReader.class).get()::readEffectiveModel)
+                    .select(bom, gavtcsSet);
+            builder
+                    .rootBom(bom)
+                    .rootArtifacts(bomRootArtifacts)
+                    .excludes(excludes);
         }
-        return result;
+
+        final DependencyCollectorRequest re = builder.build();
+        if (re.rootArtifacts().isEmpty()) {
+            throw new IllegalStateException(
+                    "Specify some root artifacts using (a) --root-artifacts groupId[:artifactId[:version[:type[:classifier]]]][,groupId[:artifactId[:version[:type[:classifier]]]],...] or (b) using --bom groupId:artifactId:version and --bom-includes and --bom-excludes or by combining (a) and (b)");
+        }
+        return re;
     }
 
-    protected Path cacheDir() {
-        Path result;
-        if ((result = cacheDirResolved) == null) {
-            result = cacheDirResolved = resolveHome(cacheDir);
+    static class GavConverter implements ITypeConverter<Gav> {
+        public Gav convert(String value) throws Exception {
+            return Gav.of(value);
         }
-        return result;
     }
 
-    protected Path userHome() {
-        Path result;
-        if ((result = userHome) == null) {
-            result = userHome = Path.of(System.getProperty("user.home"));
+    static class GavtcConverter implements ITypeConverter<Gavtc> {
+        public Gavtc convert(String value) throws Exception {
+            return Gavtc.of(value);
         }
-        return result;
     }
 
-    protected Path resolveHome(Path path) {
-        if (path != null && path.startsWith("~")) {
-            return userHome().resolve(path.subpath(1, path.getNameCount()));
+    static class GavtcsPatternConverter implements ITypeConverter<GavtcsPattern> {
+        public GavtcsPattern convert(String value) throws Exception {
+            return GavtcsPattern.of(value);
         }
-        return path;
+    }
+
+    static class GavSetConverter implements ITypeConverter<GavSet> {
+        public GavSet convert(String value) throws Exception {
+            return GavSet.builder().defaultResult(GavSet.excludeAll()).includes(value).build();
+        }
     }
 
 }

@@ -8,6 +8,7 @@ import eu.maveniverse.maven.mima.context.Context;
 import eu.maveniverse.maven.mima.context.ContextOverrides;
 import eu.maveniverse.maven.mima.context.Runtime;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -54,9 +55,11 @@ public class ScmRepositoryServiceTest {
                             Result.success(Map.of("0.0.1", "deadbeef"))),
                     gitRepoCloneDir,
                     cacheDir,
+                    Instant.now(),
                     Collections.emptyList(),
                     Collections.emptyList(),
-                    null);
+                    null,
+                    false);
             List<String> trees = DependencyCollector.collect(context, re)
                     .map(resolvedArtifact -> {
                         ScmInfoNode rootScmInfoNode = locator.newVisitor().walk(resolvedArtifact).rootNode();

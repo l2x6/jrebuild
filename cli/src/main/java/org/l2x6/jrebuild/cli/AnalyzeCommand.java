@@ -9,16 +9,9 @@ import eu.maveniverse.maven.mima.context.ContextOverrides;
 import eu.maveniverse.maven.mima.context.Runtime;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.infrastructure.Infrastructure;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.List;
-import java.util.Properties;
 import java.util.Set;
 import org.jboss.logging.Logger;
 import org.l2x6.jrebuild.api.scm.FqScmRef;
@@ -26,8 +19,6 @@ import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
 import org.l2x6.jrebuild.core.build.BuildGroup;
 import org.l2x6.jrebuild.core.dep.DependencyCollector;
 import org.l2x6.jrebuild.core.dep.DependencyCollectorRequest;
-import org.l2x6.jrebuild.core.dep.DependencyCollectorRequest.Builder;
-import org.l2x6.jrebuild.core.dep.ManagedGavsSelector;
 import org.l2x6.jrebuild.core.dep.ResolvedArtifactNode;
 import org.l2x6.jrebuild.core.mima.JRebuildRuntime;
 import org.l2x6.jrebuild.core.mima.internal.CachingMavenModelReader;
@@ -38,15 +29,18 @@ import org.l2x6.jrebuild.core.tree.CutStemVisitor;
 import org.l2x6.jrebuild.core.tree.PrintVisitor;
 import org.l2x6.pom.tuner.model.Gav;
 import org.l2x6.pom.tuner.model.GavSet;
-import org.l2x6.pom.tuner.model.Gavtc;
-import org.l2x6.pom.tuner.model.GavtcsPattern;
-import org.l2x6.pom.tuner.model.GavtcsSet;
 import picocli.CommandLine;
-import picocli.CommandLine.ITypeConverter;
+import picocli.CommandLine.Mixin;
 
 @CommandLine.Command(name = "analyze")
-public class AnalyzeCommand extends AbstractRootArtifactsCommand implements Runnable {
+public class AnalyzeCommand implements Runnable {
     private static final Logger log = Logger.getLogger(AnalyzeCommand.class);
+
+    @Mixin
+    RootArtifactsOptions rootArtifactsOptions;
+
+    @Mixin
+    PncOptions pncOptions;
 
     @CommandLine.Option(names = {
             "--buildspec-clone-dir" },
@@ -64,12 +58,10 @@ public class AnalyzeCommand extends AbstractRootArtifactsCommand implements Runn
             split = ",")
     Set<String> reproducibleCentralUrls = Set.of();
 
-    @CommandLine.Option(names = { "--pnc-base-url" }, description = "The base URL of PNC build service")
-    String pncBaseUri;
-
     @CommandLine.Option(names = {
-            "--ls-remotes-older-than" }, description = """
-                    A timestamp in 2025-12-01T10:15:30Z format determining how fresh the entries in ls-remotes-cache must be.
+            "--ls-remotes-older-than" },
+            description = """
+                    A timestamp in 2025-12-01T10:15:30Z format determining how fresh the entries in the local ls-remotes-cache must be.
                     You should typically set this to the release date of the root artifacts you are analyzing.
                     E.g. if you are analyzing artigfacts from a project that was released on 2025-12-01T10:15:30Z,
                     then it is fine to set --ls-remotes-older-than=2025-12-01T10:15:30Z
@@ -86,13 +78,13 @@ public class AnalyzeCommand extends AbstractRootArtifactsCommand implements Runn
     @Override
     public void run() {
 
-        final Path cacheDir = cacheDir();
+        final Path cacheDir = rootArtifactsOptions.cacheDir();
 
-        dominoCloneDir = resolveHome(dominoCloneDir);
+        dominoCloneDir = rootArtifactsOptions.resolveHome(dominoCloneDir);
         final Path lsRemotesCache = cacheDir.resolve("ls-remotes-cache.txt");
 
         if (rawMinRetievalTime == null) {
-            minRetievalTime = defaultMinRetrievalTime(cacheDir);
+            minRetievalTime = BaseOptions.defaultMinRetrievalTime("ls-remotes-older-than", cacheDir);
         } else if ("now".equals(rawMinRetievalTime)) {
             minRetievalTime = Instant.now();
         } else {
@@ -103,32 +95,7 @@ public class AnalyzeCommand extends AbstractRootArtifactsCommand implements Runn
         ContextOverrides.Builder overrides = ContextOverrides.create();
         try (Context context = runtime.create(overrides.build())) {
 
-            final Builder builder = DependencyCollectorRequest.builder()
-                    .projectDirectory(projectDir())
-                    .includeOptionalDependencies(includeOptionalDeps)
-                    .includeParentsAndImports(includeParentsAndImports)
-                    .additionalBoms(additionalBoms)
-                    .rootArtifacts(rootArtifacts);
-            if (bom != null) {
-                final GavtcsSet gavtcsSet = GavtcsSet.builder()
-                        .includePatterns(bomIncludes)
-                        .excludePatterns(excludes)
-                        .build();
-                final Set<Gavtc> bomRootArtifacts = new ManagedGavsSelector(
-                        context.lookup().lookup(CachingMavenModelReader.class).get()::readEffectiveModel)
-                        .select(bom, gavtcsSet);
-                builder
-                        .rootBom(bom)
-                        .rootArtifacts(bomRootArtifacts)
-                        .excludes(excludes);
-            }
-
-            final DependencyCollectorRequest re = builder.build();
-
-            if (re.rootArtifacts().isEmpty()) {
-                throw new IllegalStateException(
-                        "Specify some root artifacts using (a) --root-artifacts groupId[:artifactId[:version[:type[:classifier]]]][,groupId[:artifactId[:version[:type[:classifier]]]],...] or (b) using --bom groupId:artifactId:version and --bom-includes and --bom-excludes or by combining (a) and (b)");
-            }
+            final DependencyCollectorRequest re = rootArtifactsOptions.dependencyCollectorRequest(context);
 
             try (RemoteScmLookup.AggregateRemoteScmLookup remoteScm = new RemoteScmLookup.AggregateRemoteScmLookup(
                     new GitRemoteScmLookup(lsRemotesCache, minRetievalTime))) {
@@ -137,40 +104,49 @@ public class AnalyzeCommand extends AbstractRootArtifactsCommand implements Runn
                         remoteScm,
                         dominoCloneDir,
                         cacheDir,
+                        pncOptions.maxPncBuildDate(cacheDir),
                         reproducibleCentralUrls,
                         dominoRecipeUrls,
-                        pncBaseUri);
+                        pncOptions.pncBaseUri,
+                        pncOptions.pncIncludeTemporary);
 
-                //final Collection<ScmInfoNode> dependencyTrees =
-                List<ScmInfoNode> roots = DependencyCollector.collect(context, re)
+                List<ScmInfoNode> roots =
+                        /* Collect dependencies of each root artifact */
+                        DependencyCollector.collect(context, re)
+                                /* Now we have a stream of artifact trees (one per root artifact) */
 
-                        .onItem()
-                        .transformToMulti(
-                                resolvedArtifact -> cutStemVisitor(stem).walk(resolvedArtifact).result())
-                        .merge()
+                                /* Cut the stem */
+                                .onItem()
+                                .transformToMulti(
+                                        resolvedArtifact -> cutStemVisitor(rootArtifactsOptions.stem).walk(resolvedArtifact)
+                                                .result())
+                                .merge()
+                                /* Now we have a stream of artifact trees (roughly one per root artifact) with stems cut away */
 
-                        // .onItem().invoke(resolvedArtifact -> log.infof("Resolved:\n%s", PrintVisitor.toString(resolvedArtifact)))
+                                // .onItem().invoke(resolvedArtifact -> log.infof("Resolved:\n%s", PrintVisitor.toString(resolvedArtifact)))
 
-                        .select().distinct()
+                                .select().distinct()
 
-                        .onItem()
-                        .transformToUniAndMerge(resolvedArtifact -> {
+                                /* Map each artifact of each artifact tree to its SCM repository thus becoming a stream of trees of interdependent SCM repos */
+                                .onItem()
+                                .transformToUniAndMerge(resolvedArtifact -> {
 
-                            return Uni.createFrom().item(() -> locator.newVisitor().walk(resolvedArtifact).rootNode())
-                                    .runSubscriptionOn(Infrastructure.getDefaultWorkerPool());
+                                    return Uni.createFrom().item(() -> locator.newVisitor().walk(resolvedArtifact).rootNode())
+                                            .runSubscriptionOn(Infrastructure.getDefaultWorkerPool());
 
-                        })
+                                })
 
-                        .select().distinct()
+                                .select().distinct()
 
-                        .onItem()
-                        .invoke(p -> log.infof("Scm Repos:\n%s", PrintVisitor.toString(p)))
-                        .onFailure().invoke(e -> log.error(e.getMessage(), e))
+                                .onItem()
+                                .invoke(p -> log.infof("Scm Repos:\n%s", PrintVisitor.toString(p)))
+                                .onFailure().invoke(e -> log.error(e.getMessage(), e))
 
-                        .collect().asList()
-                        .await().indefinitely();
+                                .collect().asList()
+                                .await().indefinitely();
                 ;
 
+                /* Now merge the list of SCM trees into a single tree under a a virtual root node */
                 final ScmInfoNode.Builder forest = ScmInfoNode
                         .builder(new BuildGroup.Builder(FqScmRef.createUnknown(Gav.of("root:root:0.0.0"))));
                 for (ScmInfoNode root : roots) {
@@ -183,83 +159,9 @@ public class AnalyzeCommand extends AbstractRootArtifactsCommand implements Runn
         }
     }
 
-    static Instant defaultMinRetrievalTime(Path cacheDir) {
-        final Path lastRunProperties = cacheDir.resolve("last-run.properties");
-        final Properties props = new Properties();
-        boolean exists = Files.exists(lastRunProperties);
-        if (exists) {
-            try (InputStream in = Files.newInputStream(lastRunProperties)) {
-                props.load(in);
-            } catch (IOException e) {
-                throw new RuntimeException("Could not read " + lastRunProperties);
-            }
-        }
-        final String rawMinimalRetievalTime = (String) props.getProperty("refresh-remotes-older-than");
-        if (rawMinimalRetievalTime != null) {
-            final Instant result = Instant.parse(rawMinimalRetievalTime);
-            Instant startOfTheDay = LocalDate.now()
-                    .atStartOfDay(ZoneId.systemDefault())
-                    .toInstant();
-            if (result.isBefore(startOfTheDay)) {
-                return storeLastRun(lastRunProperties, props);
-            } else {
-                log.infof(
-                        "Loaded default refresh-remotes-older-than = %s from %s; if you may want to override the value using the option --refresh-remotes-older-than",
-                        result, lastRunProperties);
-                return result;
-            }
-        }
-        return storeLastRun(lastRunProperties, props);
-    }
-
-    static Instant storeLastRun(Path lastRunProperties, Properties props) {
-        final Instant result = Instant.now();
-        props.setProperty("refresh-remotes-older-than", result.toString());
-        if (!Files.exists(lastRunProperties.getParent())) {
-            try {
-                Files.createDirectories(lastRunProperties.getParent());
-            } catch (IOException e) {
-                throw new RuntimeException("Could not create " + lastRunProperties.getParent());
-            }
-        }
-        try (OutputStream out = Files.newOutputStream(lastRunProperties)) {
-            props.store(out, "");
-        } catch (IOException e) {
-            throw new RuntimeException("Could not write " + lastRunProperties);
-        }
-        log.infof(
-                "Setting refresh-remotes-older-than = %s for today and storing it in %s; if you may want to override the value using the option --refresh-remotes-older-than",
-                result, lastRunProperties);
-        return result;
-    }
-
     public static <THIS extends CutStemVisitor<ResolvedArtifactNode, THIS>> CutStemVisitor<ResolvedArtifactNode, THIS> cutStemVisitor(
             GavSet stem) {
         return new CutStemVisitor<>(node -> stem.contains(node.gavtc().toGav()));
-    }
-
-    static class GavConverter implements ITypeConverter<Gav> {
-        public Gav convert(String value) throws Exception {
-            return Gav.of(value);
-        }
-    }
-
-    static class GavtcConverter implements ITypeConverter<Gavtc> {
-        public Gavtc convert(String value) throws Exception {
-            return Gavtc.of(value);
-        }
-    }
-
-    static class GavtcsPatternConverter implements ITypeConverter<GavtcsPattern> {
-        public GavtcsPattern convert(String value) throws Exception {
-            return GavtcsPattern.of(value);
-        }
-    }
-
-    static class GavSetConverter implements ITypeConverter<GavSet> {
-        public GavSet convert(String value) throws Exception {
-            return GavSet.builder().defaultResult(GavSet.excludeAll()).includes(value).build();
-        }
     }
 
 }

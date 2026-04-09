@@ -12,42 +12,49 @@ import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
+import java.util.stream.Stream;
 import org.jboss.logging.Logger;
 import org.jboss.pnc.dto.Artifact;
 import org.jboss.pnc.dto.Build;
 import org.jboss.pnc.dto.response.ArtifactInfo;
-import org.jboss.pnc.dto.response.Page;
-import org.jboss.pnc.enums.BuildCategory;
-import org.jboss.pnc.enums.RepositoryType;
 import org.l2x6.jrebuild.api.scm.FqScmRef;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup;
 import org.l2x6.jrebuild.api.scm.ScmRepository;
 import org.l2x6.jrebuild.api.util.ComparableVersion;
 import org.l2x6.jrebuild.common.scm.AbstractScmLocator;
 import org.l2x6.pom.tuner.model.Gav;
+import org.l2x6.pom.tuner.model.Gavtc;
 
 public class PncScmLocator extends AbstractScmLocator {
     private static final Logger log = Logger.getLogger(PncScmLocator.class);
     private static final String SOURCE = "♖";
-    private final ArtifactEndpointClient artifactEndpoint;
+    private final boolean includeTemporaryVersions;
+    private final CachingArtifactEndpointClient artifactEndpoint;
     private final Map<Gav, List<FqScmRef>> cache = new ConcurrentHashMap<>();
 
     public PncScmLocator(
             Path cacheDir,
+            Instant maxPncBuildDate,
             String pncBaseUri,
+            boolean includeTemporaryVersions,
             RemoteScmLookup scmLookup) {
         super(scmLookup);
+        Objects.requireNonNull(maxPncBuildDate);
+        this.includeTemporaryVersions = includeTemporaryVersions;
         final String artifactsUri = pncBaseUri.endsWith("/") ? (pncBaseUri + "artifacts/") : (pncBaseUri + "/artifacts/");
         final Path artifactsCacheDir = cacheDir.resolve("pnc/artifacts");
+        final Path getSpecificCacheDir = artifactsCacheDir.resolve("getSpecific");
+        final Path getAllFilteredCacheDir = artifactsCacheDir.resolve("getAllFiltered");
         try {
-            Files.createDirectories(artifactsCacheDir);
+            Files.createDirectories(getSpecificCacheDir);
+            Files.createDirectories(getAllFilteredCacheDir);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not create " + artifactsCacheDir, e);
         }
@@ -57,28 +64,66 @@ public class PncScmLocator extends AbstractScmLocator {
                     String uriStr = uri.toString();
                     return uriStr.startsWith(artifactsUri) && !uriStr.contains("artifacts/filter");
                 },
-                uri -> artifactsCacheDir.resolve(uri.toString().substring(artifactsUri.length())));
+                uri -> getSpecificCacheDir.resolve(uri.toString().substring(artifactsUri.length())));
 
         ArtifactEndpointClient client = QuarkusRestClientBuilder.newBuilder()
                 .baseUri(URI.create(pncBaseUri))
                 .register(filter)
-                //.register(PaginationParameters.class)
                 .build(ArtifactEndpointClient.class);
 
         ObjectMapper mapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         this.artifactEndpoint = new CachingArtifactEndpointClient(
-                artifactsCacheDir,
+                getSpecificCacheDir,
+                getAllFilteredCacheDir,
+                maxPncBuildDate,
                 mapper,
                 client);
     }
 
-    static String toJarGatv(Gav gav) {
-        return gav.toGa().toString() + ":pom:" + gav.getVersion() + "*";
+    static String toGatvc(Gavtc gav) {
+        String type = gav.getType();
+        if (type == null) {
+            type = "jar";
+        }
+        StringBuilder sb = new StringBuilder();
+        gav.toGa().toString(sb)
+                .append(":").append(type)
+                .append(":").append(normalizeVersion(gav.getVersion()) + "*");
+        String classifier = gav.getClassifier();
+        if (classifier != null) {
+            sb.append(":").append(classifier);
+        }
+        return sb.toString();
+    }
+
+    static String normalizeVersion(String version) {
+        String[] segments = version.split("\\.");
+        switch (segments.length) {
+        case 1: {
+            return version + ".0.0";
+        }
+        case 2: {
+            return version + ".0";
+        }
+        default:
+            return version;
+        }
+    }
+
+    static String toPomGatv(Gav gav) {
+        return gav.toGa().toString() + ":pom:" + normalizeVersion(gav.getVersion()) + "*";
+    }
+
+    public String latestPncVersion(Gavtc gav) {
+        return latestBuiltArtifact(gav)
+                .map(a -> a.version().toString())
+                .orElse(null);
     }
 
     public List<FqScmRef> locate(Gav gav) {
         return cache.computeIfAbsent(gav, k -> {
-            Optional<ComparableArtifactInfo> latestBuiltArtifact = latestBuiltArtifact(k);
+            Gavtc pomGav = k.toGavtc("pom", null);
+            Optional<ComparableArtifactInfo> latestBuiltArtifact = latestBuiltArtifact(pomGav);
             if (latestBuiltArtifact.isPresent()) {
                 ArtifactInfo latestArtifactInfo = latestBuiltArtifact.get().artifact();
                 log.debugf("Latest build %s", latestArtifactInfo.getIdentifier());
@@ -98,53 +143,48 @@ public class PncScmLocator extends AbstractScmLocator {
         });
     }
 
-    private Optional<ComparableArtifactInfo> latestBuiltArtifact(Gav gav) {
-
-        Function<Integer, Page<ArtifactInfo>> getArtifactPages = i -> {
-            //log.debugf("Getting page %d", i);
-            Page<ArtifactInfo> result = artifactEndpoint.getAllFiltered(
-                    i,
-                    org.jboss.pnc.rest.configuration.Constants.MAX_PAGE_SIZE,
-                    toJarGatv(gav),
-                    Set.of(org.jboss.pnc.enums.ArtifactQuality.NEW),
-                    RepositoryType.MAVEN, Set.of(BuildCategory.values()));
-            //log.debugf("Got %d results on page %d/%d for %s", result.getTotalHits(), result.getPageIndex(), result.getTotalPages(), gav);
-            return result;
-        };
-
-        return Clients.stream(getArtifactPages).map(ComparableArtifactInfo::of)
+    private Optional<ComparableArtifactInfo> latestBuiltArtifact(Gavtc gav) {
+        Stream<ComparableArtifactInfo> stream = artifactEndpoint.getAllFiltered(toGatvc(gav))
+                .map(ComparableArtifactInfo::of);
+        if (!includeTemporaryVersions) {
+            stream = stream.filter(artifactInfo -> !artifactInfo.version().toString().contains("temporary-"));
+        }
+        return stream
                 //.peek(ai -> log.debugf("PNC artifact %s", ai.artifact.getIdentifier()))
                 .max(Comparator.comparing(ComparableArtifactInfo::version));
     }
 
     static record ComparableArtifactInfo(ArtifactInfo artifact, ComparableVersion version) {
         static ComparableArtifactInfo of(ArtifactInfo artifact) {
-            Gatv gatv = Gatv.of(artifact.getIdentifier());
+            Gatvc gatv = Gatvc.of(artifact.getIdentifier());
             ComparableVersion v = new ComparableVersion(gatv.gav.getVersion());
             return new ComparableArtifactInfo(artifact, v);
         }
     }
 
-    static class Gatv {
-        public static Gatv of(String gatv) {
+    static record Gatvc(Gav gav, String type, String classifier) {
+        public static Gatvc of(String gatv) {
             String[] segments = gatv.split(":");
-            if (segments.length != 4) {
-                throw new IllegalArgumentException("Expected 4 segments, found " + gatv);
+            switch (segments.length) {
+            case 4: {
+                return new Gatvc(new Gav(segments[0], segments[1], segments[3]), segments[2], null);
             }
-            return new Gatv(new Gav(segments[0], segments[1], segments[3]), segments[2]);
-        }
-
-        private final Gav gav;
-        private final String type;
-
-        public Gatv(Gav gav, String type) {
-            super();
-            this.gav = gav;
-            this.type = type;
+            case 5: {
+                return new Gatvc(new Gav(segments[0], segments[1], segments[3]), segments[2],
+                        segments[4].isEmpty() ? null : segments[4]);
+            }
+            default:
+                throw new IllegalArgumentException("Expected 4 or 5 segments, found " + gatv);
+            }
         }
 
         public String toString() {
-            return gav.toGa().toString() + ":" + type + ":" + gav.getVersion();
+            StringBuilder sb = gav.toGa().toString(new StringBuilder()).append(":").append(type).append(":")
+                    .append(gav.getVersion());
+            if (classifier != null) {
+                sb.append(":").append(classifier);
+            }
+            return sb.toString();
         }
     }
 
