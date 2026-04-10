@@ -51,8 +51,8 @@ public class ReproducibleCentralLayout implements BuildspecRepository {
             String remote,
             String branch,
             Path workingCopyDirectory,
-            Path indexBaseDir) {
-
+            Path indexBaseDir,
+            Path cacheDir) {
         final int threads = Math.max(Runtime.getRuntime().availableProcessors() / 2, 2);
         final ThreadGroup threadGroup = Thread.currentThread().getThreadGroup();
         final AtomicInteger threadCounter = new AtomicInteger(1);
@@ -75,7 +75,8 @@ public class ReproducibleCentralLayout implements BuildspecRepository {
                     centralContentCommitId = ref.getObjectId().getName();
                 }
                 final Path centralContentDir = workingCopyDirectory.resolve("content");
-                ReproducibleCentralLayout.load(executor, indexBaseDir, centralContentDir, centralContentCommitId, delegate);
+                ReproducibleCentralLayout.load(executor, indexBaseDir, centralContentDir, centralContentCommitId, delegate,
+                        cacheDir);
             } catch (Throwable e) {
                 delegate.completeExceptionally(e);
                 executor.close();
@@ -85,19 +86,19 @@ public class ReproducibleCentralLayout implements BuildspecRepository {
     }
 
     static void load(ExecutorService executor, Path indexBaseDir, Path centralContentDir, String centralContentCommitId,
-            CompletableFuture<BuildspecRepository> result) {
+            CompletableFuture<BuildspecRepository> result, Path cacheDir) {
         final Path indexCommitDir = indexBaseDir.resolve(centralContentCommitId);
         if (Files.isDirectory(indexCommitDir)) {
             result.complete(IndexedBuildspecRepository.load(indexCommitDir));
         } else {
-            index(executor, indexCommitDir, centralContentDir, result);
+            index(executor, indexCommitDir, centralContentDir, result, cacheDir);
         }
     }
 
     static void index(ExecutorService executor, Path indexCommitDir, Path centralContentDir,
-            CompletableFuture<BuildspecRepository> result) {
+            CompletableFuture<BuildspecRepository> result, Path cacheDir) {
         log.infof("Parsing Reproducible Central Buildspecs from %s", centralContentDir);
-        IndexedBuildspecRepository.Builder indexBuilder = new IndexedBuildspecRepository.Builder(indexCommitDir);
+        IndexedBuildspecRepository.Builder indexBuilder = new IndexedBuildspecRepository.Builder(indexCommitDir, cacheDir);
         final Map<Gav, Buildspec> gavToBuildspec = new ConcurrentHashMap<>();
         try (Stream<Path> files = Files.walk(centralContentDir)) {
             CompletableFuture[] futures = files
@@ -136,7 +137,7 @@ public class ReproducibleCentralLayout implements BuildspecRepository {
     static CompletableFuture<Void> parse(ExecutorService executor, Map<Gav, Buildspec> gavToBuildspec, Path buildspecPath,
             Builder indexBuilder) {
         return CompletableFuture.runAsync(() -> {
-            BuildinfoEntry entry = BuildinfoEntry.of(buildspecPath);
+            BuildinfoEntry entry = BuildinfoEntry.of(indexBuilder.shfmt, buildspecPath);
             Buildspec buildspec = entry.buildspec();
             Buildinfo buildinfo = entry.buildinfo();
             Set<Gav> gavs = buildinfo.gavs();
@@ -144,7 +145,7 @@ public class ReproducibleCentralLayout implements BuildspecRepository {
                 gavToBuildspec.put(gav, buildspec);
             }
             Gav gav = buildinfo.gav();
-            //log.tracef("Parsed Buildspec for %s", gav);
+            // log.tracef("Parsed Buildspec for %s", gav);
             if (!gavs.contains(gav)) {
                 gavToBuildspec.put(gav, buildspec);
             }
@@ -166,8 +167,8 @@ public class ReproducibleCentralLayout implements BuildspecRepository {
     }
 
     private record BuildinfoEntry(Buildinfo buildinfo, Buildspec buildspec) {
-        public static BuildinfoEntry of(Path buildspecPath) {
-            final Buildspec buildspec = Buildspec.of(buildspecPath);
+        public static BuildinfoEntry of(Shfmt shfmt, Path buildspecPath) {
+            final Buildspec buildspec = Buildspec.of(shfmt, buildspecPath);
             final Path buildinfoPath = buildspecPath.getParent()
                     .resolve(buildspecPath.getFileName().toString().replace(".buildspec", ".buildinfo"));
             return new BuildinfoEntry(Buildinfo.of(buildinfoPath, buildspec.gav()), buildspec);
@@ -237,10 +238,12 @@ public class ReproducibleCentralLayout implements BuildspecRepository {
         static class Builder implements AutoCloseable {
             private final Properties gavToBuildspecPath = new Properties();
             private final Path indexCommitDir;
+            private final Shfmt shfmt;
 
-            public Builder(Path indexCommitDir) {
+            public Builder(Path indexCommitDir, Path cacheDir) {
                 super();
                 this.indexCommitDir = indexCommitDir;
+                this.shfmt = new Shfmt(cacheDir);
             }
 
             public void delete() {

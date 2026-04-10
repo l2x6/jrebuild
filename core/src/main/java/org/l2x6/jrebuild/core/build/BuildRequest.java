@@ -1,5 +1,7 @@
 package org.l2x6.jrebuild.core.build;
 
+import org.l2x6.jrebuild.api.os.Arch;
+import org.l2x6.jrebuild.api.os.Os;
 import org.l2x6.jrebuild.api.scm.FqScmRef;
 
 public record BuildRequest(

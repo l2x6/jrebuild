@@ -26,6 +26,7 @@ class ReproducibleCentralBuildspecTest {
 
     @Test
     void parseAll() throws IOException, InvalidRemoteException, TransportException, GitAPIException {
+
         //final String remote = "file:///home/ppalaga/orgs/pnc/reproducible-central/.git";
         final String remote = "https://github.com/jvm-repo-rebuild/reproducible-central.git";
         final String branch = "master";
@@ -38,21 +39,24 @@ class ReproducibleCentralBuildspecTest {
             Files.createDirectories(cloneDir);
         }
         Path cacheDir = Path.of("target/cache-" + uuid).toAbsolutePath().normalize();
-        Files.createDirectories(cloneDir);
+        Files.createDirectories(cacheDir);
+        Path indexBaseDir = cacheDir.resolve("reproducible-central-index");
 
         final Set<Gav> gavs1;
         {
             long start = System.currentTimeMillis();
-            BuildspecRepository central = ReproducibleCentralLayout.cloneOrFetch(remote, branch, cloneDir, cacheDir);
-            assertCentral(cloneDir, cacheDir, central);
+            BuildspecRepository central = ReproducibleCentralLayout.cloneOrFetch(remote, branch, cloneDir, indexBaseDir,
+                    cacheDir);
+            assertCentral(cloneDir, indexBaseDir, central);
             log.infof("Parsed Reproducible Central Buildspecs in %s" + Duration.ofMillis(System.currentTimeMillis() - start));
             gavs1 = central.gavs();
         }
         final Set<Gav> gavs2;
         {
             long start = System.currentTimeMillis();
-            BuildspecRepository central = ReproducibleCentralLayout.cloneOrFetch(remote, branch, cloneDir, cacheDir);
-            assertCentral(cloneDir, cacheDir, central);
+            BuildspecRepository central = ReproducibleCentralLayout.cloneOrFetch(remote, branch, cloneDir, indexBaseDir,
+                    cacheDir);
+            assertCentral(cloneDir, indexBaseDir, central);
             log.infof("Loaded Reproducible Central Buildspecs from properties in %s"
                     + Duration.ofMillis(System.currentTimeMillis() - start));
             gavs2 = central.gavs();

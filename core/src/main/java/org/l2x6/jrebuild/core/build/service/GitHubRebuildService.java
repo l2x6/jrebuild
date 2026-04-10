@@ -24,14 +24,14 @@ import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.l2x6.jrebuild.api.os.Arch;
+import org.l2x6.jrebuild.api.os.Os;
+import org.l2x6.jrebuild.api.os.Shell;
 import org.l2x6.jrebuild.api.scm.FqScmRef;
 import org.l2x6.jrebuild.api.scm.ScmRepository;
-import org.l2x6.jrebuild.core.build.Arch;
 import org.l2x6.jrebuild.core.build.BuildGroup;
 import org.l2x6.jrebuild.core.build.BuildRequest;
-import org.l2x6.jrebuild.core.build.Os;
 import org.l2x6.jrebuild.core.build.Reproducibility;
-import org.l2x6.jrebuild.core.build.Shell;
 import org.l2x6.pom.tuner.model.Gav;
 import org.l2x6.pom.tuner.model.Gavtc;
 
