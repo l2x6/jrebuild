@@ -4,7 +4,6 @@
  */
 package org.l2x6.jrebuild.reproducible.central.api;
 
-import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,8 +18,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.cliassured.CliAssured;
 import org.jboss.logging.Logger;
+import org.l2x6.jrebuild.reproducible.central.Shfmt;
 import org.l2x6.pom.tuner.model.Gav;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -105,9 +104,9 @@ public record Buildspec(
         Gav gav) {
     private static final Logger log = Logger.getLogger(Buildspec.class);
 
-    public static Buildspec of(Path file) {
+    public static Buildspec of(Shfmt shfmt, Path file) {
         try {
-            return of(file, Files.readString(file, StandardCharsets.UTF_8));
+            return of(shfmt, file, Files.readString(file, StandardCharsets.UTF_8));
         } catch (Exception e) {
             throw new RuntimeException("Could not parse " + file, e);
         }
@@ -222,11 +221,11 @@ public record Buildspec(
                 gav);
     }
 
-    public static Buildspec of(Path file, String document) {
+    public static Buildspec of(Shfmt shfmt, Path file, String document) {
         final ObjectMapper mapper = JsonMapper.builder()
                 .build();
-        final String mini = minify(document);
-        final String json = parseToJson(mini);
+        final String mini = shfmt.minify(document);
+        final String json = shfmt.parseToJson(mini);
         JsonNode f = mapper.readTree(json);
         Builder b = new Builder();
 
@@ -279,36 +278,6 @@ public record Buildspec(
             int end = parts.get(parts.size() - 1).path("End").path("Offset").asInt();
             return src.substring(start, end);
         }
-    }
-
-    static String parseToJson(String file) {
-        final ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        CliAssured
-                .command("shfmt", "--to-json")
-                .stdin(file)
-                .then()
-                .stdout()
-                //.log(log::info)
-                .redirect(baos)
-                .execute()
-                .assertSuccess();
-        byte[] bytes = baos.toByteArray();
-        return new String(bytes, StandardCharsets.UTF_8);
-    }
-
-    static String minify(String file) {
-        final ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        CliAssured
-                .command("shfmt", "--minify")
-                .stdin(file)
-                .then()
-                .stdout()
-                //.log(log::info)
-                .redirect(baos)
-                .execute()
-                .assertSuccess();
-        byte[] bytes = baos.toByteArray();
-        return new String(bytes, StandardCharsets.UTF_8);
     }
 
     public static Builder builder() {

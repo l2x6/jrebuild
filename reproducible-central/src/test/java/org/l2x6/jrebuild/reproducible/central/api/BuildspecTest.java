@@ -5,13 +5,25 @@
 package org.l2x6.jrebuild.reproducible.central.api;
 
 import java.nio.file.Path;
+import java.util.UUID;
 import org.assertj.core.api.Assertions;
 import org.jboss.logging.Logger;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.l2x6.jrebuild.reproducible.central.Shfmt;
 import org.l2x6.jrebuild.reproducible.central.api.Buildspec.Newline;
 
 class BuildspecTest {
     private static final Logger log = Logger.getLogger(BuildspecTest.class);
+
+    private static Shfmt shfmt;
+
+    @BeforeAll
+    static void beforeAll() {
+        UUID uuid = UUID.randomUUID();
+        Path cacheDir = Path.of("target/cache-" + uuid).toAbsolutePath().normalize();
+        shfmt = new Shfmt(cacheDir);
+    }
 
     @Test
     void minimal() {
@@ -30,7 +42,8 @@ class BuildspecTest {
     }
 
     static Buildspec mimimalBuilder(String additional) {
-        return Buildspec.of(Path.of("foo.buildspec"), """
+
+        return Buildspec.of(shfmt, Path.of("foo.buildspec"), """
                 groupId=g
                 artifactId=a
                 version="1.2.3"
@@ -209,6 +222,6 @@ class BuildspecTest {
 
     static Buildspec of(String bspecName) {
         Path bspec = Path.of("src/test/resources/buildspec/" + bspecName);
-        return Buildspec.of(bspec);
+        return Buildspec.of(shfmt, bspec);
     }
 }
