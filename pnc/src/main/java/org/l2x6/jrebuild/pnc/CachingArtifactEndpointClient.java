@@ -7,7 +7,6 @@ package org.l2x6.jrebuild.pnc;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,9 +42,9 @@ public record CachingArtifactEndpointClient(
     }
 
     public Stream<ArtifactInfo> getAllFiltered(String gavPattern) {
-        Optional<List<ArtifactInfo>> cached = Clients.<List<ArtifactInfo>> readCached(
-                getAllFilteredCacheDir,
-                gavPattern,
+        CacheEntry sanitizedGavPattern = CacheEntry.of(getAllFilteredCacheDir, gavPattern);
+
+        Optional<List<ArtifactInfo>> cached = sanitizedGavPattern.<List<ArtifactInfo>> read(
                 mapper,
                 file -> {
                     try {
@@ -75,21 +74,14 @@ public record CachingArtifactEndpointClient(
 
         /* Cache locally */
         List<ArtifactInfo> result = Clients.stream(getArtifactPages).toList();
-        final Path file = getAllFilteredCacheDir.resolve(gavPattern + ".json");
-        try (OutputStream out = Files.newOutputStream(file)) {
-            mapper.writeValue(out, result);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not write to " + file, e);
-        }
-
+        sanitizedGavPattern.write(mapper, result);
         return result.stream();
     }
 
     @Override
     public Artifact getSpecific(String id) {
-        return Clients.<Artifact> readCached(
-                getSpecificCacheDir,
-                id,
+        CacheEntry ce = CacheEntry.of(getSpecificCacheDir, id);
+        return ce.<Artifact> read(
                 mapper,
                 file -> true, // we assume the build data for a specific build is immutable
                 new TypeReference<Artifact>() {

@@ -64,7 +64,7 @@ public class PncScmLocator extends AbstractScmLocator {
                     String uriStr = uri.toString();
                     return uriStr.startsWith(artifactsUri) && !uriStr.contains("artifacts/filter");
                 },
-                uri -> getSpecificCacheDir.resolve(uri.toString().substring(artifactsUri.length())));
+                uri -> CacheEntry.of(getAllFilteredCacheDir, uri.toString().substring(artifactsUri.length())));
 
         ArtifactEndpointClient client = QuarkusRestClientBuilder.newBuilder()
                 .baseUri(URI.create(pncBaseUri))
