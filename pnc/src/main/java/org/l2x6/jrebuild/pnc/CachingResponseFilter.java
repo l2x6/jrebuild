@@ -12,26 +12,23 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.net.URI;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
 public record CachingResponseFilter(
         Predicate<URI> isCached,
-        Function<URI, Path> getFile) implements ClientResponseFilter {
+        Function<URI, CacheEntry> getFile) implements ClientResponseFilter {
 
     @Override
     public void filter(ClientRequestContext requestContext, ClientResponseContext responseContext) throws IOException {
         final URI uri = requestContext.getUri();
         if (isCached.test(uri) && responseContext.hasEntity()) {
-            final Path file = getFile.apply(uri);
             try (InputStream is = responseContext.getEntityStream()) {
                 byte[] bytes = is.readAllBytes();
-                Files.write(file, bytes);
+                getFile.apply(uri).write(bytes);
                 responseContext.setEntityStream(new ByteArrayInputStream(bytes));
             } catch (IOException e) {
-                throw new UncheckedIOException("Could not write to " + file, e);
+                throw new UncheckedIOException("Could not read from entity stream of " + uri, e);
             }
         }
     }
