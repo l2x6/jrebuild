@@ -16,9 +16,11 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.UUID;
 import org.assertj.core.api.Assertions;
 import org.cliassured.CliAssured;
+import org.jboss.logging.Logger;
 import org.junit.jupiter.api.Test;
 
 public class FindPncBuildsCommandIT {
+    private static final Logger log = Logger.getLogger(FindPncBuildsCommandIT.class);
 
     @Test
     void run() throws IOException {
@@ -46,7 +48,9 @@ public class FindPncBuildsCommandIT {
             }
         });
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        CliAssured.java().args("-jar", "target/quarkus-app/quarkus-run.jar", "find-pnc-builds",
+        CliAssured.java().args(
+                "-Dstdout.encoding=utf-8", "-Dstderr.encoding=utf-8",
+                "-jar", "target/quarkus-app/quarkus-run.jar", "find-pnc-builds",
                 "--root-artifacts=com.fasterxml.woodstox:woodstox-core:7.1.1",
                 "--pnc-base-url=https://fake", // should not matter as we have everything in the cache
                 // use https://orch.pnc.engineering.redhat.com/pnc-rest/v2 to refresh the cache
@@ -62,7 +66,7 @@ public class FindPncBuildsCommandIT {
         ;
 
         String outString = new String(out.toByteArray(), StandardCharsets.UTF_8);
-        Assertions.assertThat(outString).contains("""
+        Assertions.assertThat(outString.replace("\r", "")).contains("""
                  ❌ 🟢root:root:0.0.0/null
                 `- ✅ 🟢com.fasterxml.woodstox:woodstox-core:7.1.1/7.1.1.redhat-00002
                    +- ✅ 👴com.fasterxml:oss-parent:68:pom/68.0.0.redhat-00004
