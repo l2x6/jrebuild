@@ -14,6 +14,7 @@ import org.assertj.core.api.Assertions;
 import org.eclipse.aether.RepositoryCache;
 import org.eclipse.aether.RepositorySystemSession;
 import org.jboss.logging.Logger;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.l2x6.jrebuild.core.dep.JrebuildTestUtils;
 import org.l2x6.jrebuild.core.mima.JRebuildRuntime;
@@ -22,8 +23,14 @@ import org.l2x6.pom.tuner.model.Gav;
 public class CachingMavenModelReaderTest {
     private static final Logger log = Logger.getLogger(CachingMavenModelReaderTest.class);
 
+    @BeforeEach
+    void beforeEach() {
+        JrebuildTestUtils.installTestProject();
+    }
+
     @Test
     void readModelWithParent() {
+        log.warn("foo");
         JRebuildRuntime runtime = org.l2x6.jrebuild.core.mima.JRebuildRuntime.getInstance();
         eu.maveniverse.maven.mima.context.ContextOverrides.Builder overrides = JrebuildTestUtils.testRepo();
         final ObservableRepositoryCache cache = new ObservableRepositoryCache();

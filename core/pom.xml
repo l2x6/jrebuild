@@ -75,6 +75,11 @@
             <groupId>org.cli-assured</groupId>
             <artifactId>cli-assured</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.cli-assured</groupId>
+            <artifactId>cli-assured-mvn</artifactId>
+            <scope>test</scope>
+        </dependency>
 
         <dependency>
             <groupId>org.apache.maven</groupId>
@@ -157,29 +162,5 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-invoker-plugin</artifactId>
-                <configuration>
-                    <projectsDirectory>src/test/projects</projectsDirectory>
-                    <cloneProjectsTo>target/projects</cloneProjectsTo>
-                    <skipInstallation>${skipTests}</skipInstallation>
-                    <skipInvocation>${skipTests}</skipInvocation>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>install-test-projects</id>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                        <phase>test-compile</phase>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
 
 </project>

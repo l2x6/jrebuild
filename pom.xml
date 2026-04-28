@@ -218,6 +218,11 @@
                 <version>${cli-assured.version}</version>
             </dependency>
             <dependency>
+                <groupId>org.cli-assured</groupId>
+                <artifactId>cli-assured-mvn</artifactId>
+                <version>${cli-assured.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>org.eclipse.jgit</groupId>
                 <artifactId>org.eclipse.jgit</artifactId>
                 <version>${jgit.version}</version>

@@ -16,6 +16,7 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.assertj.core.api.Assertions;
 import org.jboss.logging.Logger;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.l2x6.jrebuild.core.dep.DependencyCollectorRequest.Builder;
 import org.l2x6.jrebuild.core.mima.internal.CachingMavenModelReader;
@@ -27,6 +28,11 @@ import org.l2x6.pom.tuner.model.GavtcsSet;
 
 public class DependencyCollectorTest {
     private static final Logger log = Logger.getLogger(DependencyCollectorTest.class);
+
+    @BeforeEach
+    void beforeEach() {
+        JrebuildTestUtils.installTestProject();
+    }
 
     @Test
     void includeOptionalDependencies() {
