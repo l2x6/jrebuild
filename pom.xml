@@ -60,6 +60,7 @@
         <assertj.version>3.27.6</assertj.version>
         <cli-assured.version>0.0.1</cli-assured.version>
         <commons-compress.version>1.28.0</commons-compress.version>
+        <diff-utils.version>4.16</diff-utils.version>
         <jackson.version>3.0.3</jackson.version>
         <jgit.version>7.5.0.202512021534-r</jgit.version>
         <junit.version>5.13.4</junit.version>
@@ -180,6 +181,11 @@
                 <groupId>eu.maveniverse.maven.mima.runtime</groupId>
                 <artifactId>standalone-static</artifactId>
                 <version>${mima.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.java-diff-utils</groupId>
+                <artifactId>java-diff-utils</artifactId>
+                <version>${diff-utils.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.commons</groupId>

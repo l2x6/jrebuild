@@ -1,13 +1,18 @@
 package org.l2x6.jrebuild.core.build;
 
+/**
+ * A Reproducibility level of an artifact, such as jar file or pom.xml file that was rebuilt locally,
+ * compared to a reference artifact, typically on Maven Central.
+ */
 public enum Reproducibility implements Comparable<Reproducibility> {
-    /** Binary equal with reference artifacts on Central */
+    /** Binary equal with reference artifacts on Maven Central */
     PERFECT,
     /**
      * <ul>
      * <li>All artifacts available
      * <li>Lists of files in archives are the same
-     * <li>Class file structure (fields, method signatures and constant pool match) of all classes is the same same,
+     * <li>Class file structure (fields, method signatures and constant pool match, regardless of the ordering) of all
+     * classes is the same same,
      * the following mismatches may occur:
      * <ul>
      * <li>Archive entry date mismatch

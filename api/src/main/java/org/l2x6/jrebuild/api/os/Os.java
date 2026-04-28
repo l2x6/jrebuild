@@ -7,14 +7,16 @@ package org.l2x6.jrebuild.api.os;
 import java.util.Locale;
 
 public enum Os {
-    LINUX(Shell.BASH),
-    MACOS(Shell.BASH),
-    WINDOWS(Shell.CMD_EXE);
+    LINUX(Shell.BASH, Eol.LF),
+    MACOS(Shell.BASH, Eol.LF),
+    WINDOWS(Shell.CMD_EXE, Eol.CRLF);
 
     private final Shell defaultShell;
+    private final Eol eol;
 
-    private Os(Shell defaultShell) {
+    private Os(Shell defaultShell, Eol eol) {
         this.defaultShell = defaultShell;
+        this.eol = eol;
     }
 
     public static Os getDefault() {
@@ -35,5 +37,9 @@ public enum Os {
 
     public Shell defaultShell() {
         return defaultShell;
+    }
+
+    public Eol eol() {
+        return eol;
     }
 }

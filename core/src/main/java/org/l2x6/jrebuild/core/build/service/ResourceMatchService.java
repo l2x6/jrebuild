@@ -1,0 +1,540 @@
+package org.l2x6.jrebuild.core.build.service;
+
+import com.github.difflib.DiffUtils;
+import com.github.difflib.UnifiedDiffUtils;
+import com.github.difflib.patch.AbstractDelta;
+import com.github.difflib.patch.Patch;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.lang.classfile.AccessFlags;
+import java.lang.classfile.Attribute;
+import java.lang.classfile.ClassFile;
+import java.lang.classfile.ClassModel;
+import java.lang.classfile.CodeModel;
+import java.lang.classfile.FieldModel;
+import java.lang.classfile.MethodModel;
+import java.lang.classfile.constantpool.ClassEntry;
+import java.lang.reflect.AccessFlag;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.function.BiPredicate;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
+import org.apache.commons.compress.archivers.zip.ZipFile;
+import org.apache.commons.io.IOUtils;
+import org.l2x6.jrebuild.api.util.JrebuildUtils;
+import org.l2x6.jrebuild.api.util.MappedList;
+import org.l2x6.jrebuild.core.build.Resource;
+import org.l2x6.jrebuild.core.build.Resource.Line;
+import org.l2x6.jrebuild.core.build.ResourceMatch;
+import org.l2x6.jrebuild.core.build.ResourceMatch.IndentedLine;
+import org.l2x6.jrebuild.core.build.ResourceMatchLevel;
+
+public interface ResourceMatchService {
+
+    public ResourceMatch compare(Resource referenceArtifact, Resource rebuiltArtifact);
+
+    static class BaseResourceMatchService implements ResourceMatchService {
+
+        private final Map<String, ResourceMatchService> specializedServices;
+
+        public BaseResourceMatchService() {
+            super();
+            final ZipResourceMatchService zipMatcher = new ZipResourceMatchService(this);
+            final TextResourceMatchService textResourceMatchService = new TextResourceMatchService();
+            this.specializedServices = Map.of(
+                    ".zip", zipMatcher,
+                    ".jar", zipMatcher,
+                    ".ear", zipMatcher,
+                    ".war", zipMatcher,
+                    ".class", new ClassFileMatchService(),
+                    ".txt", textResourceMatchService,
+                    ".java", textResourceMatchService,
+                    ".md", textResourceMatchService,
+                    ".adoc", textResourceMatchService,
+                    ".mf", textResourceMatchService);
+        }
+
+        @Override
+        public ResourceMatch compare(Resource referenceArtifact, Resource rebuiltArtifact) {
+            if (rebuiltArtifact.isMissing()) {
+                return ResourceMatchLevel.MISSING_IN_REBUILD.match(referenceArtifact.path());
+            }
+            if (referenceArtifact.isMissing()) {
+                return ResourceMatchLevel.MISSING_IN_REFERENCE.match(rebuiltArtifact.path());
+            }
+
+            if (Arrays.equals(rebuiltArtifact.bytes(), referenceArtifact.bytes())) {
+                return ResourceMatchLevel.PERFECT.match(rebuiltArtifact.path());
+            }
+            String path = referenceArtifact.path();
+            String lowerCasePath = path.toLowerCase(Locale.ROOT);
+            for (Entry<String, ResourceMatchService> en : specializedServices.entrySet()) {
+                if (lowerCasePath.endsWith(en.getKey())) {
+                    return en.getValue().compare(referenceArtifact, rebuiltArtifact);
+                }
+            }
+            return ResourceMatchLevel.MISMATCH.match(rebuiltArtifact.path());
+        }
+
+        static class TextResourceMatchService implements ResourceMatchService {
+
+            private static final BiPredicate<Line, Line> EOL_INSENSITIVE_EQUALS = (a, b) -> Objects.equals(a.line(), b.line());
+
+            @Override
+            public ResourceMatch compare(Resource reference, Resource rebuilt) {
+                List<Line> rebuiltLines = rebuilt.lines();
+                List<Line> refLines = reference.lines();
+                MappedList<Line, String> refEolLines = new MappedList<Line, String>(refLines, Line::toString);
+                Patch<String> diff = DiffUtils.diff(
+                        refEolLines,
+                        new MappedList<Line, String>(rebuiltLines, Line::toString));
+                List<AbstractDelta<String>> eolSensitiveDeltas = diff.getDeltas();
+                if (eolSensitiveDeltas.isEmpty()) {
+                    return ResourceMatchLevel.PERFECT.match(rebuilt.path());
+                }
+                List<IndentedLine> msg = UnifiedDiffUtils.generateUnifiedDiff(
+                        reference.path(),
+                        rebuilt.path(), refEolLines, diff, 3)
+                        .stream()
+                        .map(IndentedLine::of)
+                        .toList();
+
+                eolSensitiveDeltas.stream().map(AbstractDelta::toString).collect(Collectors.joining("\n"));
+                List<AbstractDelta<Line>> eolInsensitiveDeltas = DiffUtils
+                        .diff(rebuiltLines, refLines, EOL_INSENSITIVE_EQUALS).getDeltas();
+                if (eolInsensitiveDeltas.isEmpty()) {
+                    /* There are only EOL diffs */
+                    return new ResourceMatch(ResourceMatchLevel.SUFFICIENT, rebuilt.path(), msg, List.of());
+                }
+                return new ResourceMatch(ResourceMatchLevel.MISMATCH, rebuilt.path(), msg, List.of());
+            }
+
+        }
+
+        static class ZipResourceMatchService implements ResourceMatchService {
+            private final ResourceMatchService delegate;
+
+            public ZipResourceMatchService(ResourceMatchService delegate) {
+                super();
+                this.delegate = delegate;
+            }
+
+            @Override
+            public ResourceMatch compare(Resource referenceArtifact, Resource rebuiltArtifact) {
+                ResourceMatchLevel level = ResourceMatchLevel.PERFECT;
+                ZipFile rebuiltZip = rebuiltArtifact.as(ZipFile.class);
+                ZipFile refZip = referenceArtifact.as(ZipFile.class);
+                Enumeration<ZipArchiveEntry> es = rebuiltZip.getEntries();
+                List<ResourceMatch> result = new ArrayList<>();
+                Set<String> rebuiltNames = new TreeSet<>();
+                while (es.hasMoreElements()) {
+                    ZipArchiveEntry entry = es.nextElement();
+                    String name = entry.getName();
+                    rebuiltNames.add(name);
+                    ZipArchiveEntry otherEntry = refZip.getEntry(name);
+                    if (otherEntry != null) {
+                        /* Compare class file */
+                        ResourceMatch match = delegate.compare(
+                                bytes(referenceArtifact.path(), refZip, otherEntry),
+                                bytes(rebuiltArtifact.path(), rebuiltZip, entry));
+                        if (match.level() != ResourceMatchLevel.PERFECT) {
+                            result.add(match);
+                            if (!match.level().isHigherOrSame(level)) {
+                                level = match.level();
+                            }
+                        }
+                    } else {
+                        level = ResourceMatchLevel.MISMATCH;
+                        result.add(ResourceMatchLevel.MISSING_IN_REFERENCE.match(name));
+                    }
+                }
+                Enumeration<ZipArchiveEntry> refEntries = refZip.getEntries();
+                while (refEntries.hasMoreElements()) {
+                    ZipArchiveEntry refEntry = refEntries.nextElement();
+                    String name = refEntry.getName();
+                    if (!rebuiltNames.remove(name)) {
+                        result.add(ResourceMatchLevel.MISSING_IN_REBUILD.match(name));
+                        level = ResourceMatchLevel.MISMATCH;
+                    }
+                }
+                return new ResourceMatch(level, rebuiltArtifact.path(), null, Collections.unmodifiableList(result));
+            }
+
+            static Resource bytes(String zipFilePath, ZipFile zipFile, ZipArchiveEntry entry) {
+                String path = zipFilePath + "!" + entry.getName();
+                ByteArrayOutputStream baos = new ByteArrayOutputStream((int) entry.getSize());
+                try (InputStream in = zipFile.getInputStream(entry)) {
+                    IOUtils.copy(in, baos);
+                } catch (IOException e) {
+                    throw new UncheckedIOException("Could not read " + path, e);
+                }
+                return Resource.of(path, baos.toByteArray());
+            }
+        }
+
+        static class ClassFileMatchService implements ResourceMatchService {
+
+            public ResourceMatch compare(Resource referenceResource, Resource rebuiltResource) {
+                ClassFile cf = ClassFile.of();
+                ClassModel left = cf.parse(referenceResource.bytes());
+                ClassModel right = cf.parse(rebuiltResource.bytes());
+                DiffBuilder out = new DiffBuilder();
+
+                compareHeader(left, right, out);
+                compareInterfaces(left, right, out);
+                compareAttributeNames(left.attributes(), right.attributes(), out);
+                compareFields(left, right, out);
+                compareMethods(left, right, out);
+                return new ResourceMatch(out.level, rebuiltResource.path(), out.messages, List.of());
+            }
+
+            private static void compareHeader(ClassModel left, ClassModel right, DiffBuilder out) {
+                if (left.majorVersion() != right.majorVersion()
+                        || left.minorVersion() != right.minorVersion()) {
+                    out.add(ResourceMatchLevel.MISMATCH, "version: %d.%d -> %d.%d"
+                            .formatted(left.majorVersion(), left.minorVersion(),
+                                    right.majorVersion(), right.minorVersion()));
+                }
+
+                String leftFlags = renderFlags(left.flags());
+                String rightFlags = renderFlags(right.flags());
+                if (!leftFlags.equals(rightFlags)) {
+                    out.add(ResourceMatchLevel.MISMATCH, "flags: %s -> %s".formatted(leftFlags, rightFlags));
+                }
+
+                String leftThis = className(left.thisClass());
+                String rightThis = className(right.thisClass());
+                if (!leftThis.equals(rightThis)) {
+                    out.add(ResourceMatchLevel.MISMATCH, "name: %s -> %s".formatted(leftThis, rightThis));
+                }
+
+                String leftSuper = left.superclass().map(ClassFileMatchService::className).orElse("<none>");
+                String rightSuper = right.superclass().map(ClassFileMatchService::className).orElse("<none>");
+                if (!leftSuper.equals(rightSuper)) {
+                    out.add(ResourceMatchLevel.MISMATCH, "superclass: %s -> %s".formatted(leftSuper, rightSuper));
+                }
+            }
+
+            static void compare(
+                    Collection<String> left,
+                    Collection<String> right,
+                    Function<String, String> leftMapper,
+                    Function<String, String> rightMapper,
+                    DiffBuilder out) {
+                left.stream()
+                        .filter(i -> !right.contains(i))
+                        .forEach(i -> out.add(ResourceMatchLevel.MISMATCH, "-" + leftMapper.apply(i)));
+                right.stream()
+                        .filter(i -> !left.contains(i))
+                        .forEach(i -> out.add(ResourceMatchLevel.MISMATCH, "+" + rightMapper.apply(i)));
+            }
+
+            static void compare(Collection<String> left, Collection<String> right,
+                    DiffBuilder out) {
+                compare(left, right, k -> k, k -> k, out);
+            }
+
+            private static void compareInterfaces(ClassModel left, ClassModel right, DiffBuilder out) {
+                Set<String> leftIfaces = left.interfaces().stream()
+                        .map(ClassFileMatchService::className)
+                        .collect(Collectors.toCollection(TreeSet::new));
+                Set<String> rightIfaces = right.interfaces().stream()
+                        .map(ClassFileMatchService::className)
+                        .collect(Collectors.toCollection(TreeSet::new));
+                out.conditionalSection("interfaces:",
+                        interfaces -> compare(leftIfaces, rightIfaces, interfaces));
+            }
+
+            private static void compareFields(ClassModel left, ClassModel right, DiffBuilder out) {
+                Map<String, FieldModel> leftFields = indexFields(left.fields());
+                Map<String, FieldModel> rightFields = indexFields(right.fields());
+                out.conditionalSection("fields:",
+                        fields -> {
+                            compare(
+                                    leftFields.keySet(),
+                                    rightFields.keySet(),
+                                    k -> renderField(leftFields.get(k)),
+                                    k -> renderField(rightFields.get(k)),
+                                    fields);
+
+                            intersect(leftFields, rightFields)
+                                    .forEach(en -> {
+                                        out.conditionalSection(en.key + ":",
+                                                field -> {
+                                                    String leftFlags = renderFlags(en.left.flags());
+                                                    String rightFlags = renderFlags(en.right.flags());
+                                                    if (!leftFlags.equals(rightFlags)) {
+                                                        field.add(
+                                                                ResourceMatchLevel.MISMATCH,
+                                                                "flags: %s -> %s".formatted(leftFlags, rightFlags));
+                                                    }
+
+                                                    compareAttributeNames(
+                                                            left.attributes(),
+                                                            right.attributes(),
+                                                            field);
+                                                });
+
+                                    });
+                        });
+
+            }
+
+            static <V> Stream<KeyLeftRight<String, V>> intersect(Map<String, V> leftFields,
+                    Map<String, V> rightFields) {
+                return leftFields.entrySet().stream()
+                        .map(en -> new KeyLeftRight<>(en.getKey(), en.getValue(), rightFields.get(en.getKey())))
+                        .filter(en -> en.right() != null);
+            }
+
+            @SuppressWarnings("unused")
+            private static void compareMethods(ClassModel leftClass, ClassModel rightClass, DiffBuilder out) {
+                Map<String, MethodModel> leftMethods = indexMethods(leftClass.methods());
+                Map<String, MethodModel> rightMethods = indexMethods(rightClass.methods());
+                out.conditionalSection("methods:",
+                        methods -> {
+
+                            compare(
+                                    leftMethods.keySet(),
+                                    rightMethods.keySet(),
+                                    k -> renderMethod(leftMethods.get(k)),
+                                    k -> renderMethod(rightMethods.get(k)),
+                                    methods);
+
+                            intersect(leftMethods, rightMethods)
+                                    .forEach(en -> {
+
+                                        out.conditionalSection(en.key,
+                                                method -> {
+                                                    String leftFlags = renderFlags(en.left.flags());
+                                                    String rightFlags = renderFlags(en.right.flags());
+                                                    if (!leftFlags.equals(rightFlags)) {
+                                                        method.add(ResourceMatchLevel.MISMATCH,
+                                                                "flags: %s -> %s".formatted(leftFlags, rightFlags));
+                                                    }
+
+                                                    compareAttributeNames(en.left.attributes(), en.right.attributes(), method);
+
+                                                    Optional<CodeModel> leftCode = en.left.code();
+                                                    Optional<CodeModel> rightCode = en.right.code();
+
+                                                    if (leftCode.isEmpty() && rightCode.isPresent()) {
+                                                        out.conditionalSection(
+                                                                "code:",
+                                                                code -> codeLines(rightCode)
+                                                                        .forEach(l -> method.add(ResourceMatchLevel.MISMATCH,
+                                                                                "+" + l)));
+                                                    } else if (leftCode.isPresent() && rightCode.isEmpty()) {
+                                                        out.conditionalSection(
+                                                                "code:",
+                                                                code -> codeLines(leftCode)
+                                                                        .forEach(l -> method.add(ResourceMatchLevel.MISMATCH,
+                                                                                "-" + l)));
+                                                    } else if (leftCode.isPresent()) {
+                                                        List<String> leftLines = codeLines(leftCode).toList();
+                                                        List<String> rightLines = codeLines(rightCode).toList();
+                                                        Patch<String> diff = DiffUtils.diff(
+                                                                leftLines,
+                                                                rightLines);
+                                                        if (diff.getDeltas().isEmpty()) {
+                                                            return;
+                                                        }
+                                                        out.conditionalSection(
+                                                                "code:",
+                                                                code -> UnifiedDiffUtils.generateUnifiedDiff(
+                                                                        "a.class",
+                                                                        "b.class",
+                                                                        leftLines,
+                                                                        diff,
+                                                                        3)
+                                                                        .stream()
+                                                                        .skip(2) // ignore the two top lines containing dummy a.class and b.class
+                                                                        .forEach(l -> method.add(ResourceMatchLevel.MISMATCH,
+                                                                                l)));
+
+                                                    }
+                                                });
+                                    });
+                        });
+
+            }
+
+            static Stream<String> codeLines(Optional<CodeModel> rightCode) {
+                return JrebuildUtils.lines(rightCode.get().toDebugString())
+                        .map(line -> line.substring(4).stripTrailing());
+            }
+
+            private static void compareAttributeNames(
+                    List<Attribute<?>> leftAttrs,
+                    List<Attribute<?>> rightAttrs,
+                    DiffBuilder out) {
+                if (Objects.equals(leftAttrs, rightAttrs)) {
+                    return;
+                }
+                // Compare by multiset-ish grouped names, but rendered as repeated sorted names.
+                List<String> left = attributeNames(leftAttrs);
+                List<String> right = attributeNames(rightAttrs);
+                out.conditionalSection(
+                        "attributes:",
+                        fields -> compare(left, right, fields));
+
+            }
+
+            private static List<String> attributeNames(List<Attribute<?>> attrs) {
+                return attrs.stream()
+                        .map(a -> a.attributeName().stringValue())
+                        .sorted()
+                        .toList();
+            }
+
+            @SuppressWarnings("unused")
+            private static Map<String, FieldModel> indexFields(List<FieldModel> fields) {
+                return fields.stream()
+                        .collect(Collectors.toMap(
+                                ClassFileMatchService::fieldKey,
+                                f -> f,
+                                (a, b) -> b,
+                                TreeMap<String, FieldModel>::new));
+            }
+
+            @SuppressWarnings("unused")
+            private static Map<String, MethodModel> indexMethods(List<MethodModel> methods) {
+                return methods.stream()
+                        .collect(Collectors.toMap(
+                                ClassFileMatchService::methodKey,
+                                m -> m,
+                                (a, b) -> b,
+                                TreeMap::new));
+            }
+
+            private static String fieldKey(FieldModel field) {
+                return field.fieldName().stringValue() + ":" + field.fieldType().stringValue();
+            }
+
+            private static String methodKey(MethodModel method) {
+                return method.methodName().stringValue() + method.methodType().stringValue();
+            }
+
+            private static String renderField(FieldModel field) {
+                return "%s %s %s".formatted(
+                        renderFlags(field.flags()),
+                        field.fieldType().stringValue(),
+                        field.fieldName().stringValue()).trim().replaceAll("\\s+", " ");
+            }
+
+            private static String renderMethod(MethodModel method) {
+                return "%s %s%s".formatted(
+                        renderFlags(method.flags()),
+                        method.methodName().stringValue(),
+                        method.methodType().stringValue()).trim().replaceAll("\\s+", " ");
+            }
+
+            private static String renderFlags(AccessFlags flags) {
+                if (flags == null) {
+                    return "<none>";
+                }
+                Set<AccessFlag> set = flags.flags();
+                if (set.isEmpty()) {
+                    return "<none>";
+                }
+                return set.stream()
+                        .map(f -> f.name().toLowerCase())
+                        .sorted()
+                        .collect(Collectors.joining(" "));
+            }
+
+            private static String className(ClassEntry entry) {
+                // internalName() returns slash-separated JVM names; convert to a friendlier form.
+                return entry.asInternalName().replace('/', '.');
+            }
+
+            private record KeyLeftRight<K, V>(K key, V left, V right) {
+            }
+
+            static class DiffSection {
+                private Consumer<IndentedLine> out;
+                private DiffSection parent;
+                private int indent;
+                private String header;
+
+                DiffSection(Consumer<IndentedLine> out, DiffSection parent, int indent, String header) {
+                    super();
+                    this.out = out;
+                    this.parent = parent;
+                    this.indent = indent;
+                    this.header = header;
+                }
+
+                void add() {
+                    if (parent != null) {
+                        parent.add();
+                        parent = null;
+                    }
+                    out.accept(new IndentedLine(indent, header));
+                }
+
+            }
+
+            static final class DiffBuilder {
+                final List<IndentedLine> messages = new ArrayList<>();
+                ResourceMatchLevel level = ResourceMatchLevel.PERFECT;
+                int indent = 0;
+                DiffSection diffSection;
+
+                DiffBuilder() {
+                }
+
+                void conditionalSection(String header, Consumer<DiffBuilder> action) {
+                    diffSection = new DiffSection(messages::add, diffSection, indent, header);
+                    indent++;
+                    action.accept(DiffBuilder.this);
+                    if (diffSection != null) {
+                        diffSection = diffSection.parent;
+                    }
+                    indent--;
+                }
+
+                void indented(Consumer<DiffBuilder> action) {
+                    indent++;
+                    action.accept(this);
+                    indent--;
+                }
+
+                void add(ResourceMatchLevel level, String line) {
+                    this.level = this.level.lower(level);
+                    if (diffSection != null) {
+                        diffSection.add();
+                        diffSection = null;
+                    }
+                    messages.add(new IndentedLine(indent, line));
+                }
+
+                @Override
+                public String toString() {
+                    return messages.toString();
+                }
+
+            }
+
+        }
+    }
+
+}

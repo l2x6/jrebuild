@@ -1,0 +1,201 @@
+package org.l2x6.jrebuild.core.build;
+
+import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import org.apache.commons.compress.archivers.zip.ZipFile;
+import org.l2x6.jrebuild.api.os.Eol;
+import org.l2x6.jrebuild.api.os.Os;
+
+public interface Resource {
+    String path();
+
+    boolean isMissing();
+
+    <T> T as(Class<T> cl);
+
+    byte[] bytes();
+
+    String string();
+
+    default List<Line> lines() {
+        List<Line> lines = new ArrayList<>();
+        try (BufferedReader r = openReader()) {
+            StringBuilder sb = new StringBuilder();
+            int ch;
+            while ((ch = r.read()) != -1) {
+                if (ch == '\r') {
+                    r.mark(1);
+                    if (r.read() == '\n') {
+                        lines.add(new Line(sb.toString(), Eol.CRLF));
+                        sb.setLength(0);
+                        continue;
+                    } else {
+                        lines.add(new Line(sb.toString(), Eol.CR));
+                        sb.setLength(0);
+                        r.reset();
+                        continue;
+                    }
+                } else if (ch == '\n') {
+                    lines.add(new Line(sb.toString(), Eol.CR));
+                    sb.setLength(0);
+                    continue;
+                }
+                sb.append((char) ch);
+            }
+            if (sb.length() > 0) {
+                lines.add(new Line(sb.toString(), null));
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read " + path(), e);
+        }
+        return Collections.unmodifiableList(lines);
+    }
+
+    BufferedReader openReader() throws IOException;
+
+    public class PathResource implements Resource {
+        public PathResource(Path path) {
+            super();
+            this.path = path;
+        }
+
+        private final Path path;
+
+        @Override
+        public String path() {
+            if (Os.current() == Os.WINDOWS) {
+                return path.toString().replace('\\', '/');
+            }
+            return path.toString();
+
+        }
+
+        @Override
+        public <T> T as(Class<T> cl) {
+            if (cl == ZipFile.class) {
+                try {
+                    return (T) ZipFile.builder()
+                            .setFile(path.toFile())
+                            .get();
+                } catch (IOException e) {
+                    throw new UncheckedIOException("Could not read " + path, e);
+                }
+            }
+            return null;
+        }
+
+        @Override
+        public byte[] bytes() {
+            try {
+                return Files.readAllBytes(path);
+            } catch (IOException e) {
+                throw new UncheckedIOException("Could not read " + path, e);
+            }
+        }
+
+        @Override
+        public String string() {
+            return new String(bytes(), StandardCharsets.UTF_8);
+        }
+
+        @Override
+        public boolean isMissing() {
+            return !Files.exists(path);
+        }
+
+        public BufferedReader openReader() throws IOException {
+            return Files.newBufferedReader(path, StandardCharsets.UTF_8);
+        }
+
+    }
+
+    public class ByteArrayResource implements Resource {
+        private static final Resource MISSING = new ByteArrayResource(null, null);
+
+        public static Resource missing() {
+            return MISSING;
+        }
+
+        private final byte[] bytes;
+        private volatile String string;
+        private final Object stringLock = new Object();
+        private final String path;
+
+        ByteArrayResource(String path, byte[] bytes) {
+            super();
+            this.path = path;
+            this.bytes = bytes;
+        }
+
+        public String path() {
+            return path;
+        }
+
+        public byte[] bytes() {
+            return bytes;
+        }
+
+        public String string() {
+            String s;
+            if ((s = string) == null) {
+                synchronized (stringLock) {
+                    if ((s = string) == null) {
+                        s = string = new String(bytes, StandardCharsets.UTF_8);
+                    }
+                }
+            }
+            return s;
+        }
+
+        @Override
+        public boolean isMissing() {
+            return bytes == null;
+        }
+
+        @Override
+        public <T> T as(Class<T> cl) {
+            if (cl == ZipFile.class) {
+                try {
+                    return (T) ZipFile.builder()
+                            .setByteArray(bytes)
+                            .get();
+                } catch (IOException e) {
+                    throw new UncheckedIOException("Could not read " + path, e);
+                }
+            }
+            return null;
+        }
+
+        @Override
+        public BufferedReader openReader() throws IOException {
+            return new BufferedReader(new InputStreamReader(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8));
+        }
+    }
+
+    public static Resource of(Path path) {
+        return new PathResource(path);
+    }
+
+    public static Resource of(String path, byte[] byteArray) {
+        return new ByteArrayResource(path, byteArray);
+    }
+
+    public record Line(String line, Eol eol) {
+
+        @Override
+        public String toString() {
+            return eol == null ? line : line + eol.escapedEolString();
+        }
+
+    }
+
+}
