@@ -16,6 +16,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import org.assertj.core.api.Assertions;
 import org.jboss.logging.Logger;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.l2x6.jrebuild.api.scm.RemoteScmLookup.MutableRemoteScmLookup;
 import org.l2x6.jrebuild.api.scm.Result;
@@ -33,6 +34,11 @@ import org.l2x6.pom.tuner.model.Gavtc;
 
 public class ScmRepositoryServiceTest {
     private static final Logger log = Logger.getLogger(DependencyCollectorTest.class);
+
+    @BeforeEach
+    void beforeEach() {
+        JrebuildTestUtils.installTestProject();
+    }
 
     @Test
     void scm() {

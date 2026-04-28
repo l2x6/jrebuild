@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.assertj.core.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.l2x6.jrebuild.core.mima.JRebuildRuntime;
 import org.l2x6.jrebuild.core.mima.internal.CachingMavenModelReader;
@@ -20,6 +21,10 @@ import org.l2x6.pom.tuner.model.Gavtc;
 import org.l2x6.pom.tuner.model.GavtcsSet;
 
 public class ManagedGavsSelectorTest {
+    @BeforeEach
+    void beforeEach() {
+        JrebuildTestUtils.installTestProject();
+    }
 
     @Test
     void selectRemote() {
