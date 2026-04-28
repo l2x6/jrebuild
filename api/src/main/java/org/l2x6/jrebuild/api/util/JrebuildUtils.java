@@ -12,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
+import java.util.StringTokenizer;
 import java.util.TreeSet;
 import java.util.Vector;
 import java.util.stream.Collectors;
@@ -103,6 +104,13 @@ public class JrebuildUtils {
             e = e.getCause();
         }
         return e;
+    }
+
+    public static Stream<String> lines(String string) {
+        return Stream.iterate(
+                new StringTokenizer(string, "\r\n"),
+                StringTokenizer::hasMoreTokens,
+                t -> t).map(StringTokenizer::nextToken);
     }
 
 }
